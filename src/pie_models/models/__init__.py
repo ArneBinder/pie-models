@@ -1,3 +1,4 @@
+from .sequence_classification import SequenceClassificationModel
 from .token_classification_with_seq2seq_encoder_and_crf import (
     TokenClassificationModelWithSeq2SeqEncoderAndCrf,
 )
