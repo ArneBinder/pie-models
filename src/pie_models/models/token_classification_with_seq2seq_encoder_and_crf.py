@@ -33,6 +33,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         model_name_or_path: str,
         num_classes: int,
         learning_rate: float = 1e-5,
+        task_learning_rate: Optional[float] = None,
         label_pad_token_id: int = -100,
         ignore_index: int = 0,
         use_crf: bool = True,
@@ -46,6 +47,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         self.ignore_index = ignore_index
 
         self.learning_rate = learning_rate
+        self.task_learning_rate = task_learning_rate
         self.label_pad_token_id = label_pad_token_id
         self.num_classes = num_classes
 
@@ -172,4 +174,16 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         return self.step(stage=TEST, batch=batch)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        if self.task_learning_rate is not None:
+            all_params = dict(self.named_parameters())
+            base_model_params = dict(self.model.named_parameters(prefix="model"))
+            task_params = {k: v for k, v in all_params.items() if k not in base_model_params}
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": base_model_params.values(), "lr": self.learning_rate},
+                    {"params": task_params.values(), "lr": self.task_learning_rate},
+                ]
+            )
+        else:
+            optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+        return [optimizer]
