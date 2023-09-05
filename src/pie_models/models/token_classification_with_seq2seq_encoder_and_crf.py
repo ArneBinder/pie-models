@@ -80,7 +80,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         self.f1 = nn.ModuleDict(
             {
                 f"stage_{stage}": torchmetrics.F1Score(
-                    num_classes=num_classes, ignore_index=ignore_index
+                    num_classes=num_classes, ignore_index=ignore_index, task="multiclass"
                 )
                 for stage in [TRAINING, VALIDATION, TEST]
             }
