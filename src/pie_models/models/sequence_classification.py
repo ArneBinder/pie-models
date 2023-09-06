@@ -59,6 +59,7 @@ class SequenceClassificationModel(PyTorchIEModel):
         freeze_base_model: bool = False,
         use_auto_model_for_sequence_classification: bool = False,
         base_model_prefix: str = "model",
+        model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -73,6 +74,7 @@ class SequenceClassificationModel(PyTorchIEModel):
             use_auto_model_for_sequence_classification
         )
         self.base_model_prefix = base_model_prefix
+        self.model_kwargs = model_kwargs or {}
 
         if isinstance(pooler, str):
             pooler = {"type": pooler}
@@ -88,21 +90,19 @@ class SequenceClassificationModel(PyTorchIEModel):
 
             if self.is_from_pretrained:
                 self.model = AutoModelForSequenceClassification.from_config(
-                    config=config, device_map="auto"
+                    config=config, **self.model_kwargs
                 )
             else:
                 self.model = AutoModelForSequenceClassification.from_pretrained(
-                    model_name_or_path,
-                    config=config,
-                    device_map="auto",
+                    model_name_or_path, config=config, **self.model_kwargs
                 )
         else:
             config = AutoConfig.from_pretrained(model_name_or_path)
             if self.is_from_pretrained:
-                self.model = AutoModel.from_config(config=config, device_map="auto")
+                self.model = AutoModel.from_config(config=config, **self.model_kwargs)
             else:
                 self.model = AutoModel.from_pretrained(
-                    model_name_or_path, config=config, device_map="auto"
+                    model_name_or_path, config=config, **self.model_kwargs
                 )
 
             if classifier_dropout is None:
