@@ -1,9 +1,28 @@
 import pytest
 import torch
 import transformers
-from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPooling,
+    SequenceClassifierOutputWithPast,
+)
 
 from pie_models.models import SequenceClassificationModel
+from pie_models.models.components.pooler import CLS_TOKEN, MENTION_POOLING, START_TOKENS
+from tests import _config_to_str
+
+# only certain combinations of pooler types and use_auto_model_for_sequence_classification are supported
+CONFIGS = [
+    {"pooler": CLS_TOKEN},
+    {"pooler": START_TOKENS},
+    {"pooler": MENTION_POOLING},
+    {"pooler": CLS_TOKEN, "use_auto_model_for_sequence_classification": True},
+]
+CONFIGS_DICT = {_config_to_str(cfg): cfg for cfg in CONFIGS}
+
+
+@pytest.fixture(scope="module", params=CONFIGS_DICT.keys())
+def config(request):
+    return CONFIGS_DICT[request.param]
 
 
 @pytest.fixture
@@ -208,24 +227,29 @@ def targets():
     return torch.tensor([0, 1, 2, 3, 1, 2, 3])
 
 
-@pytest.fixture(params=["cls_token", "mention_pooling", "start_tokens"])
-def pooler_type(request):
-    return request.param
+# @pytest.fixture()
+# def pooler_type(config):
+#    return config.get("pooler", None)
 
 
 def get_model(
     monkeypatch,
-    pooler_type,
+    pooler,
     batch_size,
     seq_len,
     num_classes,
     add_dummy_linear=False,
     model_type="bert",
+    base_model_prefix="dummy_linear",
     **model_kwargs,
 ):
     class MockConfig:
         def __init__(
-            self, hidden_size: int = 10, classifier_dropout: float = 0.1, model_type="bert"
+            self,
+            hidden_size: int = 10,
+            classifier_dropout: float = 0.1,
+            model_type="bert",
+            num_labels=None,
         ) -> None:
             self.hidden_size = hidden_size
             self.model_type = model_type
@@ -235,6 +259,7 @@ def get_model(
                 self.classifier_dropout_prob = classifier_dropout
             else:
                 self.classifier_dropout = classifier_dropout
+            self.num_labels = num_labels
 
     class MockModel(torch.nn.Module):
         def __init__(self, batch_size, seq_len, hidden_size, add_dummy_linear) -> None:
@@ -252,15 +277,42 @@ def get_model(
         def resize_token_embeddings(self, new_num_tokens):
             pass
 
+    class MockSequenceModel(torch.nn.Module):
+        def __init__(
+            self, batch_size, seq_len, hidden_size, num_classes, add_dummy_linear
+        ) -> None:
+            super().__init__()
+            self.batch_size = batch_size
+            self.seq_len = seq_len
+            self.hidden_size = hidden_size
+            self.num_classes = num_classes
+            if add_dummy_linear:
+                self.dummy_linear = torch.nn.Linear(self.hidden_size, 99)
+            self.classifier = torch.nn.Linear(self.hidden_size, self.num_classes)
+
+        def __call__(self, *args, **kwargs):
+            logits = torch.rand(self.batch_size, self.num_classes)
+            loss = torch.rand(1)[0]
+            return SequenceClassifierOutputWithPast(logits=logits, loss=loss)
+
+        def resize_token_embeddings(self, new_num_tokens):
+            pass
+
     hidden_size = 10
     tokenizer_vocab_size = 30000
+
+    def get_config(*args, **kwargs):
+        return MockConfig(
+            hidden_size=hidden_size,
+            classifier_dropout=0.1,
+            model_type=model_type,
+            num_labels=num_classes,
+        )
 
     monkeypatch.setattr(
         transformers.AutoConfig,
         "from_pretrained",
-        lambda model_name_or_path: MockConfig(
-            hidden_size=hidden_size, classifier_dropout=0.1, model_type=model_type
-        ),
+        get_config,
     )
     monkeypatch.setattr(
         transformers.AutoModel,
@@ -273,6 +325,18 @@ def get_model(
         ),
     )
 
+    monkeypatch.setattr(
+        transformers.AutoModelForSequenceClassification,
+        "from_pretrained",
+        lambda model_name_or_path, config: MockSequenceModel(
+            batch_size=batch_size,
+            seq_len=seq_len,
+            hidden_size=hidden_size,
+            num_classes=config.num_labels,
+            add_dummy_linear=add_dummy_linear,
+        ),
+    )
+
     # set seed to make the classifier deterministic
     torch.manual_seed(42)
     result = SequenceClassificationModel(
@@ -280,9 +344,10 @@ def get_model(
         num_classes=num_classes,
         tokenizer_vocab_size=tokenizer_vocab_size,
         ignore_index=0,
-        pooler=pooler_type,
+        pooler=pooler,
         # disable warmup because it would require a trainer and a datamodule to get the total number of training steps
         warmup_proportion=0.0,
+        base_model_prefix=base_model_prefix,
         **model_kwargs,
     )
     assert not result.is_from_pretrained
@@ -291,27 +356,85 @@ def get_model(
 
 
 @pytest.fixture
-def model(monkeypatch, pooler_type, inputs, targets):
+def num_classes(targets):
+    return int(max(targets) + 1)
+
+
+@pytest.fixture
+def model(monkeypatch, inputs, num_classes, config):
     return get_model(
         monkeypatch=monkeypatch,
-        pooler_type=pooler_type,
         batch_size=inputs["input_ids"].shape[0],
         seq_len=inputs["input_ids"].shape[1],
-        num_classes=int(max(targets) + 1),
+        num_classes=num_classes,
+        **config,
     )
 
 
-def test_forward(inputs, model, pooler_type):
+def test_forward(inputs, model, config, num_classes):
     batch_size, seq_len = inputs["input_ids"].shape
     # set seed to make sure the output is deterministic
     torch.manual_seed(42)
     output = model.forward(inputs)
-    assert set(output) == {"logits"}
     logits = output["logits"]
-
-    assert logits.shape == (batch_size, 4)
-
-    if pooler_type == "cls_token":
+    if config == {"use_auto_model_for_sequence_classification": True, "pooler": CLS_TOKEN}:
+        assert set(output) == {"logits", "loss"}
+        logits = output["logits"]
+        assert logits.shape == (batch_size, num_classes)
+        torch.testing.assert_close(
+            logits,
+            torch.tensor(
+                [
+                    [
+                        0.8822692632675171,
+                        0.9150039553642273,
+                        0.38286375999450684,
+                        0.9593056440353394,
+                    ],
+                    [
+                        0.3904482126235962,
+                        0.600895345211029,
+                        0.2565724849700928,
+                        0.7936413288116455,
+                    ],
+                    [
+                        0.9407714605331421,
+                        0.13318592309951782,
+                        0.9345980882644653,
+                        0.5935796499252319,
+                    ],
+                    [
+                        0.8694044351577759,
+                        0.5677152872085571,
+                        0.7410940527915955,
+                        0.42940449714660645,
+                    ],
+                    [
+                        0.8854429125785828,
+                        0.5739044547080994,
+                        0.2665800452232361,
+                        0.6274491548538208,
+                    ],
+                    [
+                        0.26963168382644653,
+                        0.4413635730743408,
+                        0.2969208359718323,
+                        0.831685483455658,
+                    ],
+                    [
+                        0.10531491041183472,
+                        0.26949483156204224,
+                        0.3588126301765442,
+                        0.19936376810073853,
+                    ],
+                ]
+            ),
+        )
+        loss = output["loss"]
+        torch.testing.assert_close(loss, torch.tensor(0.5471915602684021))
+    elif config == {"pooler": CLS_TOKEN}:
+        assert set(output) == {"logits"}
+        assert logits.shape == (batch_size, 4)
         torch.testing.assert_close(
             logits,
             torch.tensor(
@@ -361,7 +484,9 @@ def test_forward(inputs, model, pooler_type):
                 ]
             ),
         )
-    elif pooler_type == "start_tokens":
+    elif config == {"pooler": START_TOKENS}:
+        assert set(output) == {"logits"}
+        assert logits.shape == (batch_size, 4)
         torch.testing.assert_close(
             logits,
             torch.tensor(
@@ -411,7 +536,9 @@ def test_forward(inputs, model, pooler_type):
                 ]
             ),
         )
-    elif pooler_type == "mention_pooling":
+    elif config == {"pooler": MENTION_POOLING}:
+        assert set(output) == {"logits"}
+        assert logits.shape == (batch_size, 4)
         torch.testing.assert_close(
             logits,
             torch.tensor(
@@ -462,7 +589,7 @@ def test_forward(inputs, model, pooler_type):
             ),
         )
     else:
-        raise ValueError(f"Unknown pooler type: {pooler_type}")
+        raise ValueError(f"Unknown config: {config}")
 
 
 @pytest.fixture
@@ -470,18 +597,20 @@ def batch(inputs, targets):
     return (inputs, targets)
 
 
-def test_step(batch, model, pooler_type):
+def test_step(batch, model, config):
     # set the seed to make sure the loss is deterministic
     torch.manual_seed(42)
     loss = model.step("train", batch)
-    if pooler_type == "cls_token":
+    if config == {"pooler": CLS_TOKEN}:
         torch.testing.assert_close(loss, torch.tensor(1.417838096618652))
-    elif pooler_type == "start_tokens":
+    elif config == {"pooler": START_TOKENS}:
         torch.testing.assert_close(loss, torch.tensor(1.498929619789123))
-    elif pooler_type == "mention_pooling":
+    elif config == {"pooler": MENTION_POOLING}:
         torch.testing.assert_close(loss, torch.tensor(1.489617109298706))
+    elif config == {"pooler": CLS_TOKEN, "use_auto_model_for_sequence_classification": True}:
+        torch.testing.assert_close(loss, torch.tensor(0.5471915602684021))
     else:
-        raise ValueError(f"Unknown pooler type: {pooler_type}")
+        raise ValueError(f"Unknown config: {config}")
 
 
 def test_training_step(batch, model):
@@ -508,15 +637,62 @@ def test_configure_optimizers(model):
     assert optimizer.defaults["eps"] == 1e-08
 
 
-def test_configure_optimizers_with_task_learning_rate(monkeypatch):
+@pytest.mark.parametrize(
+    "pooler",
+    [START_TOKENS, MENTION_POOLING],
+)
+def test_use_auto_model_for_sequence_classification_wrong_pooler(
+    monkeypatch, pooler, inputs, targets
+):
+    with pytest.raises(ValueError) as excinfo:
+        get_model(
+            monkeypatch=monkeypatch,
+            batch_size=inputs["input_ids"].shape[0],
+            seq_len=inputs["input_ids"].shape[1],
+            num_classes=4,
+            pooler=pooler,
+            use_auto_model_for_sequence_classification=True,
+        )
+    assert (
+        str(excinfo.value)
+        == "pooler type must be 'cls_token' when using AutoModelForSequenceClassification"
+    )
+
+
+def test_base_model_named_parameters_wrong_base_model_prefix(monkeypatch, inputs, targets):
     model = get_model(
         monkeypatch=monkeypatch,
-        pooler_type="cls_token",
+        batch_size=inputs["input_ids"].shape[0],
+        seq_len=inputs["input_ids"].shape[1],
+        num_classes=4,
+        pooler=CLS_TOKEN,
+        base_model_prefix="wrong_prefix",
+        use_auto_model_for_sequence_classification=True,
+    )
+    with pytest.raises(ValueError) as excinfo:
+        model.base_model_named_parameters()
+    assert (
+        str(excinfo.value)
+        == "No base model parameters found. Is base_model_prefix=wrong_prefix for MockSequenceModel correct?"
+    )
+
+
+@pytest.mark.parametrize(
+    "use_auto_model_for_sequence_classification",
+    [True, False],
+)
+def test_configure_optimizers_with_task_learning_rate(
+    monkeypatch, use_auto_model_for_sequence_classification
+):
+    model = get_model(
+        monkeypatch=monkeypatch,
         batch_size=7,
         seq_len=22,
         num_classes=4,
         add_dummy_linear=True,
         task_learning_rate=0.1,
+        pooler=CLS_TOKEN,
+        use_auto_model_for_sequence_classification=use_auto_model_for_sequence_classification,
     )
     optimizer = model.configure_optimizers()
     assert optimizer is not None
@@ -536,21 +712,28 @@ def test_configure_optimizers_with_task_learning_rate(monkeypatch):
     assert param_group["params"][1].shape == torch.Size([4])
 
 
-def test_freeze_base_model(monkeypatch, inputs, targets):
+@pytest.mark.parametrize(
+    "use_auto_model_for_sequence_classification",
+    [True, False],
+)
+def test_freeze_base_model(
+    monkeypatch, inputs, targets, use_auto_model_for_sequence_classification
+):
     # set seed to make the classifier deterministic
     model = get_model(
         monkeypatch,
-        pooler_type="cls_token",
         batch_size=7,
         seq_len=22,
         num_classes=4,
         add_dummy_linear=True,
         freeze_base_model=True,
+        pooler=CLS_TOKEN,
+        use_auto_model_for_sequence_classification=use_auto_model_for_sequence_classification,
     )
-    base_model_params = list(model.model.parameters())
+    named_base_model_params = model.base_model_named_parameters()
     # the dummy linear from the mock base model has 2 parameters
-    assert len(base_model_params) == 2
-    for param in base_model_params:
+    assert len(named_base_model_params) == 2
+    for name, param in named_base_model_params.items():
         assert not param.requires_grad
 
 
@@ -560,10 +743,10 @@ def test_freeze_base_model(monkeypatch, inputs, targets):
 def test_config_model_classifier_dropout(monkeypatch, model_type):
     model = get_model(
         monkeypatch,
-        pooler_type="cls_token",
         batch_size=7,
         seq_len=22,
         num_classes=4,
         model_type=model_type,
+        pooler=CLS_TOKEN,
     )
     assert model is not None
