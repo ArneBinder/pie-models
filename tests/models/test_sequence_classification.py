@@ -317,7 +317,7 @@ def get_model(
     monkeypatch.setattr(
         transformers.AutoModel,
         "from_pretrained",
-        lambda model_name_or_path, config: MockModel(
+        lambda model_name_or_path, device_map, config: MockModel(
             batch_size=batch_size,
             seq_len=seq_len,
             hidden_size=hidden_size,
@@ -328,7 +328,7 @@ def get_model(
     monkeypatch.setattr(
         transformers.AutoModelForSequenceClassification,
         "from_pretrained",
-        lambda model_name_or_path, config: MockSequenceModel(
+        lambda model_name_or_path, config, device_map: MockSequenceModel(
             batch_size=batch_size,
             seq_len=seq_len,
             hidden_size=hidden_size,

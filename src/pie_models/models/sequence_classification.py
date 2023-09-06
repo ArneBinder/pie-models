@@ -87,18 +87,23 @@ class SequenceClassificationModel(PyTorchIEModel):
                 )
 
             if self.is_from_pretrained:
-                self.model = AutoModelForSequenceClassification.from_config(config=config)
+                self.model = AutoModelForSequenceClassification.from_config(
+                    config=config, device_map="auto"
+                )
             else:
                 self.model = AutoModelForSequenceClassification.from_pretrained(
                     model_name_or_path,
                     config=config,
+                    device_map="auto",
                 )
         else:
             config = AutoConfig.from_pretrained(model_name_or_path)
             if self.is_from_pretrained:
-                self.model = AutoModel.from_config(config=config)
+                self.model = AutoModel.from_config(config=config, device_map="auto")
             else:
-                self.model = AutoModel.from_pretrained(model_name_or_path, config=config)
+                self.model = AutoModel.from_pretrained(
+                    model_name_or_path, config=config, device_map="auto"
+                )
 
             if classifier_dropout is None:
                 # Get the classifier dropout value from the Huggingface model config.
