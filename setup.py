@@ -3,10 +3,7 @@
 from setuptools import find_packages, setup
 
 REQUIRED_PKGS = [
-    # "pytorch-ie >= 0.18.0",
-    # requires:
-    # - https://github.com/ChristophAlt/pytorch-ie/pull/328 add model and taskmodule Interface classes
-    "pytorch-ie @ git+https://github.com/ChristophAlt/pytorch-ie.git@interface_classes",
+    "pytorch-ie >= 0.22.0",
     "torchmetrics >= 0.11.0",
 ]
 
