@@ -507,3 +507,21 @@ def test_base_model_named_parameters_no_prefix(monkeypatch):
     assert (
         str(excinfo.value) == "base_model_prefix has to be set to select the base model parameters"
     )
+
+
+def test_base_model_named_parameters_wrong_prefix(monkeypatch):
+    model = get_model(
+        monkeypatch,
+        pooler_type="cls_token",
+        batch_size=7,
+        seq_len=22,
+        num_classes=4,
+        add_dummy_linear=True,
+        base_model_prefix="wrong_prefix",
+    )
+    with pytest.raises(ValueError) as excinfo:
+        model.base_model_named_parameters()
+    assert (
+        str(excinfo.value)
+        == "No base model parameters found. Is base_model_prefix=wrong_prefix for MockModel correct?"
+    )

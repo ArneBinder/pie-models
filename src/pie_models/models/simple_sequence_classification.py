@@ -98,6 +98,12 @@ class SimpleSequenceClassificationModel(
             if name.startswith(self.base_model_prefix)
         ]
 
+        if len(result) == 0:
+            raise ValueError(
+                f"No base model parameters found. Is base_model_prefix={self.base_model_prefix} for "
+                f"{type(self.model).__name__} correct?"
+            )
+
         return result
 
     def forward(self, inputs: ModelInputType) -> ModelOutputType:
