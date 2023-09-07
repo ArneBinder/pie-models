@@ -20,6 +20,11 @@ StepBatchEncodingType: TypeAlias = Tuple[
     Optional[Tensor],
 ]
 
+HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE = {
+    "albert": "classifier_dropout_prob",
+    "distilbert": "seq_classif_dropout",
+    "longformer": "hidden_dropout_prob"
+}
 
 TRAINING = "train"
 VALIDATION = "val"
@@ -36,6 +41,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         task_learning_rate: Optional[float] = None,
         label_pad_token_id: int = -100,
         ignore_index: int = 0,
+        classifier_dropout: Optional[float] = None,
         use_crf: bool = True,
         freeze_base_model: bool = False,
         seq2seq_encoder: Optional[Dict[str, Any]] = None,
@@ -67,11 +73,18 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
                 config=seq2seq_encoder, input_size=hidden_size
             )
 
-        classifier_dropout = (
-            config.classifier_dropout
-            if hasattr(config, 'classifier_dropout') and config.classifier_dropout is not None
-            else config.hidden_dropout_prob
+        # Get the classifier dropout value from the Huggingface model config.
+        # This is a bit of a mess since some Configs use different variable names or change the semantics
+        # of the dropout (e.g. DistilBert has one dropout prob for QA and one for Seq classification, and a
+        # general one for embeddings, encoder and pooler).
+        classifier_dropout_attr = HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE.get(
+            config.model_type, "classifier_dropout"
         )
+        if classifier_dropout is None:
+            classifier_dropout = getattr(config, classifier_dropout_attr) or 0.0
+        else:
+            raise ValueError(f"The config {type(config),__name__} loaded from {model_name_or_path} has no attribute {classifier_dropout_attr}")
+
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(hidden_size, num_classes)
 
