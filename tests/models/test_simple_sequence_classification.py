@@ -224,7 +224,7 @@ def get_model(
     num_classes,
     add_dummy_linear=False,
     model_type="bert",
-    base_model_prefix="model.dummy_linear",
+    base_model_prefix="dummy_linear",
     **model_kwargs,
 ):
     class MockConfig:

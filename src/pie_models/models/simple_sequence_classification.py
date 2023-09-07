@@ -93,8 +93,8 @@ class SimpleSequenceClassificationModel(
         if self.base_model_prefix is None:
             raise ValueError("base_model_prefix has to be set to select the base model parameters")
         result = [
-            (name, param)
-            for name, param in self.named_parameters()
+            (f"model.{name}", param)
+            for name, param in self.model.named_parameters()
             if name.startswith(self.base_model_prefix)
         ]
 
