@@ -3,6 +3,7 @@ from typing import Any, MutableMapping, Optional, Tuple
 
 import torchmetrics
 from pytorch_ie.core import PyTorchIEModel
+from pytorch_ie.models.interface import RequiresModelNameOrPath, RequiresNumClasses
 from torch import Tensor, nn
 from torch.optim import AdamW
 from transformers import (
@@ -35,12 +36,14 @@ logger = logging.getLogger(__name__)
 
 
 @PyTorchIEModel.register()
-class SimpleSequenceClassificationModel(PyTorchIEModel):
+class SimpleSequenceClassificationModel(
+    PyTorchIEModel, RequiresModelNameOrPath, RequiresNumClasses
+):
     def __init__(
         self,
         model_name_or_path: str,
         num_classes: int,
-        tokenizer_vocab_size: int,
+        tokenizer_vocab_size: Optional[int] = None,
         ignore_index: Optional[int] = None,
         learning_rate: float = 1e-5,
         task_learning_rate: Optional[float] = None,
@@ -67,14 +70,13 @@ class SimpleSequenceClassificationModel(PyTorchIEModel):
             self.model = AutoModelForSequenceClassification.from_pretrained(
                 model_name_or_path, config=config
             )
-        self.model.resize_token_embeddings(tokenizer_vocab_size)
+
+        if tokenizer_vocab_size is not None:
+            self.model.resize_token_embeddings(tokenizer_vocab_size)
 
         if self.freeze_base_model:
-            if self.base_model_prefix is None:
-                raise ValueError("base_model_prefix has to be set if freeze_base_model is True")
-            for name, param in self.named_parameters():
-                if name.startswith(self.base_model_prefix):
-                    param.requires_grad = False
+            for name, param in self.base_model_named_parameters():
+                param.requires_grad = False
 
         self.f1 = nn.ModuleDict(
             {
@@ -86,6 +88,17 @@ class SimpleSequenceClassificationModel(PyTorchIEModel):
                 for stage in [TRAINING, VALIDATION, TEST]
             }
         )
+
+    def base_model_named_parameters(self) -> list[Tuple[str, Tensor]]:
+        if self.base_model_prefix is None:
+            raise ValueError(
+                "base_model_prefix has to be set to select the base model parameters"
+            )
+        return [
+            (name, param)
+            for name, param in self.named_parameters()
+            if name.startswith(self.base_model_prefix)
+        ]
 
     def forward(self, inputs: ModelInputType) -> ModelOutputType:
         return self.model(**inputs)
@@ -119,16 +132,8 @@ class SimpleSequenceClassificationModel(PyTorchIEModel):
 
     def configure_optimizers(self):
         if self.task_learning_rate is not None:
-            if self.base_model_prefix is None:
-                raise ValueError(
-                    "base_model_prefix has to be set if task_learning_rate is not None"
-                )
             all_params = dict(self.named_parameters())
-            base_model_params = {
-                name: param
-                for name, param in all_params.items()
-                if name.startswith(self.base_model_prefix)
-            }
+            base_model_params = dict(self.base_model_named_parameters())
             task_params = {k: v for k, v in all_params.items() if k not in base_model_params}
             optimizer = AdamW(
                 [
