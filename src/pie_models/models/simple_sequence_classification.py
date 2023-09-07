@@ -91,14 +91,14 @@ class SimpleSequenceClassificationModel(
 
     def base_model_named_parameters(self) -> list[Tuple[str, Tensor]]:
         if self.base_model_prefix is None:
-            raise ValueError(
-                "base_model_prefix has to be set to select the base model parameters"
-            )
-        return [
+            raise ValueError("base_model_prefix has to be set to select the base model parameters")
+        result = [
             (name, param)
             for name, param in self.named_parameters()
             if name.startswith(self.base_model_prefix)
         ]
+
+        return result
 
     def forward(self, inputs: ModelInputType) -> ModelOutputType:
         return self.model(**inputs)

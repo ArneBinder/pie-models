@@ -224,6 +224,7 @@ def get_model(
     num_classes,
     add_dummy_linear=False,
     model_type="bert",
+    base_model_prefix="model.dummy_linear",
     **model_kwargs,
 ):
     class MockConfig:
@@ -292,7 +293,7 @@ def get_model(
         # pooler=pooler_type,
         # disable warmup because it would require a trainer and a datamodule to get the total number of training steps
         warmup_proportion=0.0,
-        base_model_prefix="model.dummy_linear",
+        base_model_prefix=base_model_prefix,
         **model_kwargs,
     )
     assert not result.is_from_pretrained
@@ -474,3 +475,35 @@ def test_config_model_classifier_dropout(monkeypatch, model_type):
         model_type=model_type,
     )
     assert model is not None
+
+
+def test_base_model_named_parameters(monkeypatch):
+    model = get_model(
+        monkeypatch,
+        pooler_type="cls_token",
+        batch_size=7,
+        seq_len=22,
+        num_classes=4,
+        add_dummy_linear=True,
+    )
+    base_model_named_parameters = model.base_model_named_parameters()
+    assert len(base_model_named_parameters) == 2
+    assert base_model_named_parameters[0][0] == "model.dummy_linear.weight"
+    assert base_model_named_parameters[1][0] == "model.dummy_linear.bias"
+
+
+def test_base_model_named_parameters_no_prefix(monkeypatch):
+    model = get_model(
+        monkeypatch,
+        pooler_type="cls_token",
+        batch_size=7,
+        seq_len=22,
+        num_classes=4,
+        add_dummy_linear=True,
+        base_model_prefix=None,
+    )
+    with pytest.raises(ValueError) as excinfo:
+        model.base_model_named_parameters()
+    assert (
+        str(excinfo.value) == "base_model_prefix has to be set to select the base model parameters"
+    )
