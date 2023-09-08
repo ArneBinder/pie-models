@@ -6,7 +6,7 @@ from pytorch_ie.core import PyTorchIEModel
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 from torchcrf import CRF
-from transformers import AutoConfig, AutoModel, BatchEncoding
+from transformers import AutoConfig, AutoModel, BatchEncoding, get_linear_schedule_with_warmup
 from transformers.modeling_outputs import TokenClassifierOutput
 from typing_extensions import TypeAlias
 
@@ -44,6 +44,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         classifier_dropout: Optional[float] = None,
         use_crf: bool = True,
         freeze_base_model: bool = False,
+        warmup_proportion: float = 0.1,
         seq2seq_encoder: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -53,6 +54,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         self.ignore_index = ignore_index
 
         self.learning_rate = learning_rate
+        self.warmup_proportion = warmup_proportion
         self.task_learning_rate = task_learning_rate
         self.label_pad_token_id = label_pad_token_id
         self.num_classes = num_classes
@@ -199,4 +201,12 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
             )
         else:
             optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        return [optimizer]
+
+        if self.warmup_proportion > 0.0:
+            stepping_batches = self.trainer.estimated_stepping_batches
+            scheduler = get_linear_schedule_with_warmup(
+                optimizer, int(stepping_batches * self.warmup_proportion), stepping_batches
+            )
+            return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
+        else:
+            return optimizer
