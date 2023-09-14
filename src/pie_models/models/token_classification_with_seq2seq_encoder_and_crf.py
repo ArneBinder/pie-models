@@ -6,7 +6,12 @@ from pytorch_ie.core import PyTorchIEModel
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 from torchcrf import CRF
-from transformers import AutoConfig, AutoModel, BatchEncoding, get_linear_schedule_with_warmup
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    BatchEncoding,
+    get_linear_schedule_with_warmup,
+)
 from transformers.modeling_outputs import TokenClassifierOutput
 from typing_extensions import TypeAlias
 
@@ -23,7 +28,7 @@ StepBatchEncodingType: TypeAlias = Tuple[
 HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE = {
     "albert": "classifier_dropout_prob",
     "distilbert": "seq_classif_dropout",
-    "longformer": "hidden_dropout_prob"
+    "longformer": "hidden_dropout_prob",
 }
 
 TRAINING = "train"
@@ -85,7 +90,9 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
         if classifier_dropout is None and hasattr(config, classifier_dropout_attr):
             classifier_dropout = getattr(config, classifier_dropout_attr)
         else:
-            raise ValueError(f"The config {type(config),__name__} loaded from {model_name_or_path} has no attribute {classifier_dropout_attr}")
+            raise ValueError(
+                f"The config {type(config),__name__} loaded from {model_name_or_path} has no attribute {classifier_dropout_attr}"
+            )
 
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(hidden_size, num_classes)
