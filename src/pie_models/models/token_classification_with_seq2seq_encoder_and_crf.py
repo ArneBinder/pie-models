@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 import torch
 import torchmetrics
 from pytorch_ie.core import PyTorchIEModel
+from pytorch_ie.models.interface import RequiresModelNameOrPath, RequiresNumClasses
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 from torchcrf import CRF
@@ -37,7 +38,9 @@ TEST = "test"
 
 
 @PyTorchIEModel.register()
-class TokenClassificationModelWithSeq2SeqEncoderAndCrf(PyTorchIEModel):
+class TokenClassificationModelWithSeq2SeqEncoderAndCrf(
+    PyTorchIEModel, RequiresNumClasses, RequiresModelNameOrPath
+):
     def __init__(
         self,
         model_name_or_path: str,
