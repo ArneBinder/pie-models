@@ -27,6 +27,7 @@ StepBatchEncodingType: TypeAlias = Tuple[
 ]
 
 HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE = {
+    "bert": "hidden_dropout_prob",
     "albert": "classifier_dropout_prob",
     "distilbert": "seq_classif_dropout",
     "longformer": "hidden_dropout_prob",
@@ -90,14 +91,16 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(
         classifier_dropout_attr = HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE.get(
             config.model_type, "classifier_dropout"
         )
-        if classifier_dropout is None and hasattr(config, classifier_dropout_attr):
+        if classifier_dropout is not None:
+            self.dropout = nn.Dropout(classifier_dropout)
+        elif hasattr(config, classifier_dropout_attr):
             classifier_dropout = getattr(config, classifier_dropout_attr)
+            self.dropout = nn.Dropout(classifier_dropout)
         else:
             raise ValueError(
                 f"The config {type(config),__name__} loaded from {model_name_or_path} has no attribute {classifier_dropout_attr}"
             )
 
-        self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(hidden_size, num_classes)
 
         self.crf = CRF(num_tags=num_classes, batch_first=True) if use_crf else None
