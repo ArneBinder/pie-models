@@ -333,15 +333,17 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         for rel in relations:
             if isinstance(rel, BinaryRelation):
                 with_reversed_relations.append(rel)
+
+                label = rel.label
                 if rel.label not in self.symmetric_relations:
-                    with_reversed_relations.append(
-                        BinaryRelation(
-                            head=rel.tail,
-                            tail=rel.head,
-                            label=rel.label + self.reversed_relation_label_suffix,
-                            score=rel.score,
-                        )
-                    )
+                    label += self.reversed_relation_label_suffix
+                reversed_rel = BinaryRelation(
+                    head=rel.tail,
+                    tail=rel.head,
+                    label=label,
+                    score=rel.score,
+                )
+                with_reversed_relations.append(reversed_rel)
             else:
                 raise NotImplementedError(
                     f"the taskmodule does not yet support adding reversed relations for type: {type(rel)}"
