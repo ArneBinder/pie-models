@@ -31,14 +31,20 @@ from pytorch_ie.annotations import (
     NaryRelation,
     Span,
 )
-from pytorch_ie.core import AnnotationList, Document, TaskEncoding, TaskModule
+from pytorch_ie.core import (
+    Annotation,
+    AnnotationList,
+    Document,
+    TaskEncoding,
+    TaskModule,
+)
 from pytorch_ie.documents import (
     TextDocument,
     TextDocumentWithLabeledEntitiesAndRelations,
     TextDocumentWithLabeledEntitiesRelationsAndLabeledPartitions,
 )
 from pytorch_ie.taskmodules.interface import ChangesTokenizerVocabSize
-from pytorch_ie.utils.span import get_token_slice, is_contained_in
+from pytorch_ie.utils.span import get_token_slice, has_overlap, is_contained_in
 from pytorch_ie.utils.window import get_window_around_slice
 from transformers import AutoTokenizer
 from transformers.file_utils import PaddingStrategy
@@ -83,6 +89,25 @@ END = "end"
 
 
 logger = logging.getLogger(__name__)
+
+
+def inner_span_distance(start_end: Tuple[int, int], other_start_end: Tuple[int, int]) -> int:
+    dist_start_other_end = abs(start_end[0] - other_start_end[1])
+    dist_end_other_start = abs(start_end[1] - other_start_end[0])
+    dist = min(dist_start_other_end, dist_end_other_start)
+    if not has_overlap(start_end, other_start_end):
+        return dist
+    else:
+        return -dist
+
+
+def span_distance(
+    start_end: Tuple[int, int], other_start_end: Tuple[int, int], distance_type: str
+) -> int:
+    if distance_type == "inner":
+        return inner_span_distance(start_end, other_start_end)
+    else:
+        raise ValueError(f"unknown distance_type={distance_type}. use one of: inner")
 
 
 class RelationArgument:
@@ -160,7 +185,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self,
         tokenizer_name_or_path: str,
         relation_annotation: str = "relations",
-        create_relation_candidates: bool = False,
+        add_candidate_relations: bool = False,
+        add_reversed_relations: bool = False,
         partition_annotation: Optional[str] = None,
         none_label: str = "no_relation",
         padding: Union[bool, str, PaddingStrategy] = True,
@@ -174,7 +200,10 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         single_argument_pair: bool = True,
         append_markers: bool = False,
         entity_labels: Optional[List[str]] = None,
-        reversed_relation_label_suffix: Optional[str] = None,
+        reversed_relation_label_suffix: str = "_reversed",
+        symmetric_relations: Optional[List[str]] = None,
+        max_argument_distance: Optional[int] = None,
+        max_argument_distance_type: str = "inner",
         max_window: Optional[int] = None,
         log_first_n_examples: int = 0,
         add_argument_indices_to_input: bool = False,
@@ -184,7 +213,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self.save_hyperparameters()
 
         self.relation_annotation = relation_annotation
-        self.create_relation_candidates = create_relation_candidates
+        self.add_candidate_relations = add_candidate_relations
+        self.add_reversed_relations = add_reversed_relations
         self.padding = padding
         self.truncation = truncation
         self.label_to_id = label_to_id or {}
@@ -199,6 +229,9 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self.partition_annotation = partition_annotation
         self.none_label = none_label
         self.reversed_relation_label_suffix = reversed_relation_label_suffix
+        self.symmetric_relations = set(symmetric_relations or [])
+        self.max_argument_distance = max_argument_distance
+        self.max_argument_distance_type = max_argument_distance_type
         self.max_window = max_window
         # overwrite None with 0 for backward compatibility
         self.log_first_n_examples = log_first_n_examples or 0
@@ -248,6 +281,17 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         if self.none_label in relation_labels:
             relation_labels.remove(self.none_label)
 
+        if self.add_reversed_relations:
+            for rel_label in relation_labels:
+                if rel_label.endswith(self.reversed_relation_label_suffix):
+                    raise ValueError(
+                        f"the relation label '{rel_label}' already ends with the reversed_relation_label_suffix "
+                        f"'{self.reversed_relation_label_suffix}', this is not allowed because we would not know "
+                        f"if we should strip the suffix and revert the arguments during inference or not"
+                    )
+                if rel_label not in self.symmetric_relations:
+                    relation_labels.add(rel_label + self.reversed_relation_label_suffix)
+
         self.label_to_id = {label: i + 1 for i, label in enumerate(sorted(relation_labels))}
         self.label_to_id[self.none_label] = 0
 
@@ -284,14 +328,42 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
         self.id_to_label = {v: k for k, v in self.label_to_id.items()}
 
-    def _create_relation_candidates(
+    def _add_reversed_relations(self, relations: Sequence[Annotation]) -> List[BinaryRelation]:
+        with_reversed_relations: List[BinaryRelation] = []
+        for rel in relations:
+            if isinstance(rel, BinaryRelation):
+                with_reversed_relations.append(rel)
+                if rel.label not in self.symmetric_relations:
+                    with_reversed_relations.append(
+                        BinaryRelation(
+                            head=rel.tail,
+                            tail=rel.head,
+                            label=rel.label + self.reversed_relation_label_suffix,
+                            score=rel.score,
+                        )
+                    )
+            else:
+                raise NotImplementedError(
+                    f"the taskmodule does not yet support adding reversed relations for type: {type(rel)}"
+                )
+
+        return with_reversed_relations
+
+    def _add_candidate_relations(
         self,
-        document: Document,
+        relations: Sequence[Annotation],
+        entities: Sequence[LabeledSpan],
     ) -> List[BinaryRelation]:
         relation_candidates: List[BinaryRelation] = []
-        relations: AnnotationList[BinaryRelation] = self.get_relation_layer(document)
-        entities: AnnotationList[LabeledSpan] = self.get_entity_layer(document)
-        arguments_to_relation = {(rel.head, rel.tail): rel for rel in relations}
+        arguments_to_relation: Dict[Tuple[Annotation, Annotation], BinaryRelation] = {}
+        for rel in relations:
+            if isinstance(rel, BinaryRelation):
+                arguments_to_relation[(rel.head, rel.tail)] = rel
+            else:
+                raise NotImplementedError(
+                    f"the taskmodule does not yet support adding relation candidates for type: {type(rel)}"
+                )
+
         # iterate over all possible argument candidates
         for head in entities:
             for tail in entities:
@@ -311,16 +383,51 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
         return relation_candidates
 
+    def _filter_relations(
+        self,
+        relations: Sequence[BinaryRelation],
+    ) -> Sequence[BinaryRelation]:
+        # for now, we just support filtering by distance
+        if self.max_argument_distance is None:
+            return relations
+        else:
+            result: List[BinaryRelation] = []
+            for rel in relations:
+                if isinstance(rel, BinaryRelation):
+                    if isinstance(rel.head, Span) and isinstance(rel.tail, Span):
+                        if (
+                            span_distance(
+                                (rel.head.start, rel.head.end),
+                                (rel.tail.start, rel.tail.end),
+                                self.max_argument_distance_type,
+                            )
+                            <= self.max_argument_distance
+                        ):
+                            result.append(rel)
+                    else:
+                        raise NotImplementedError(
+                            f"the taskmodule does not yet support filtering relation candidates with arguments "
+                            f"of type: {type(rel.head)} and {type(rel.tail)}"
+                        )
+                else:
+                    raise NotImplementedError(
+                        f"the taskmodule does not yet support filtering relation candidates for type: {type(rel)}"
+                    )
+            return result
+
     def encode_input(
         self,
         document: TextDocument,
         is_training: bool = False,
-    ) -> Optional[Union[TaskEncodingType, Sequence[TaskEncodingType],]]:
-        relations: Sequence[BinaryRelation]
-        if self.create_relation_candidates:
-            relations = self._create_relation_candidates(document)
-        else:
-            relations = self.get_relation_layer(document)
+    ) -> Optional[Union[TaskEncodingType, Sequence[TaskEncodingType]]]:
+        relations: Sequence[BinaryRelation] = self.get_relation_layer(document)
+        if self.add_reversed_relations:
+            relations = self._add_reversed_relations(relations=relations)
+        if self.add_candidate_relations:
+            relations = self._add_candidate_relations(
+                relations=relations, entities=self.get_entity_layer(document)
+            )
+        relations = self._filter_relations(relations=relations)
 
         partitions: Sequence[Span]
         if self.partition_annotation is not None:
@@ -614,7 +721,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 head = candidate_annotation.head
                 tail = candidate_annotation.tail
                 # reverse any predicted reversed relations back
-                if self.reversed_relation_label_suffix is not None and label.endswith(
+                if self.add_reversed_relations and label.endswith(
                     self.reversed_relation_label_suffix
                 ):
                     label = label[: -len(self.reversed_relation_label_suffix)]

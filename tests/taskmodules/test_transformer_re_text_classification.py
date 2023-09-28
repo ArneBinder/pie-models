@@ -857,7 +857,7 @@ def test_encode_with_create_relation_candidates(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
         tokenizer_name_or_path=tokenizer_name_or_path,
-        create_relation_candidates=True,
+        add_candidate_relations=True,
     )
     taskmodule.prepare(documents)
     documents_without_relations = []
