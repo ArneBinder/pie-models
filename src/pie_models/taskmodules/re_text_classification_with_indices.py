@@ -722,12 +722,15 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             if isinstance(candidate_annotation, BinaryRelation):
                 head = candidate_annotation.head
                 tail = candidate_annotation.tail
-                # reverse any predicted reversed relations back
-                if self.add_reversed_relations and label.endswith(
-                    self.reversed_relation_label_suffix
-                ):
-                    label = label[: -len(self.reversed_relation_label_suffix)]
-                    head, tail = tail, head
+                # Reverse predicted reversed relations back. Serialization will remove any duplicated relations.
+                if self.add_reversed_relations:
+                    if label.endswith(self.reversed_relation_label_suffix):
+                        label = label[: -len(self.reversed_relation_label_suffix)]
+                        head, tail = tail, head
+                    # If the predicted label is symmetric, we sort the arguments by its center.
+                    elif label in self.symmetric_relations:
+                        if (head.start + head.end) / 2 < (tail.start + tail.end) / 2:
+                            head, tail = tail, head
                 new_annotation = BinaryRelation(
                     head=head, tail=tail, label=label, score=probability
                 )
