@@ -177,7 +177,14 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(
 
         loss = output.loss
         # show loss on each step only during training
-        self.log(f"{stage}/loss", loss, on_step=(stage == TRAINING), on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(
+            f"{stage}/loss",
+            loss,
+            on_step=(stage == TRAINING),
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
 
         target_flat = target.view(-1)
 
