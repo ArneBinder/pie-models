@@ -187,7 +187,7 @@ class TokenClassificationModelWithSeq2SeqEncoderAndCrf(
 
         f1 = self.f1[f"stage_{stage}"]
         f1(valid_logits, valid_target)
-        self.log(f"{stage}/f1", f1, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, sync_dist=True)
+        self.log(f"{stage}/f1", f1, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return loss
 
