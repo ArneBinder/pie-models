@@ -370,11 +370,12 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 rel_args_reversed = (rel_args[1], rel_args[0])
                 if rel_args_reversed in rel_args_to_relation:
                     prev_label = rel_args_to_relation[rel_args_reversed].label
-                    raise ValueError(
-                        f"doc.id={doc_id}: can not add the reversed relation with arguments={rel_args_reversed} and "
-                        f"label={label} because there is already a relation with label {prev_label} for "
-                        f"these arguments"
+                    logger.warning(
+                        f"doc.id={doc_id}: there is already a relation with reversed arguments={rel_args_reversed} "
+                        f"and label={prev_label}, so we do not add the reversed relation (with label {prev_label}) "
+                        f"for these arguments"
                     )
+                    continue
 
                 reversed_rel = BinaryRelation(
                     head=rel.tail,
