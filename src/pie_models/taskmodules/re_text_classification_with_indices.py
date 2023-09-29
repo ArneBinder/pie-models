@@ -282,7 +282,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             relation_labels.remove(self.none_label)
 
         if self.add_reversed_relations:
-            for rel_label in relation_labels:
+            for rel_label in set(relation_labels):
                 if rel_label.endswith(self.reversed_relation_label_suffix):
                     raise ValueError(
                         f"the relation label '{rel_label}' already ends with the reversed_relation_label_suffix "
