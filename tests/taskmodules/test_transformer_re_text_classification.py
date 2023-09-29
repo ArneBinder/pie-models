@@ -14,6 +14,7 @@ from pie_models.taskmodules import RETextClassificationWithIndicesTaskModule
 from pie_models.taskmodules.re_text_classification_with_indices import (
     HEAD,
     TAIL,
+    inner_span_distance,
     span_distance,
 )
 from tests import _config_to_str
@@ -871,21 +872,27 @@ def test_encode_input_with_add_candidate_relations(documents):
     # just take the first three documents
     for doc in documents[:3]:
         doc_without_relations = doc.copy()
+        relations = list(doc_without_relations.relations)
         doc_without_relations.relations.clear()
+        # re-add one relation to test if it is kept
+        if len(relations) > 0:
+            doc_without_relations.relations.append(relations[0])
         documents_without_relations.append(doc_without_relations)
         encodings.extend(taskmodule.encode(doc_without_relations))
     assert len(encodings) == 4
 
     # There are no entities in the first document, so there are no created relation candidates
 
+    # this relation was kept
     encoding = encodings[0]
     assert encoding.document == documents_without_relations[1]
     assert encoding.document.text == "Entity A works at B."
     relation = encoding.metadata["candidate_annotation"]
     assert str(relation.head) == "Entity A"
     assert str(relation.tail) == "B"
-    assert relation.label == "no_relation"
+    assert relation.label == "per:employee_of"
 
+    # the following relations were added
     encoding = encodings[1]
     assert encoding.document == documents_without_relations[1]
     assert encoding.document.text == "Entity A works at B."
@@ -985,6 +992,34 @@ def test_encode_input_with_add_reversed_relations(documents):
     assert relation.label == "per:employee_of_reversed"
 
 
+def test_prepare_with_add_reversed_relations_with_label_has_suffix():
+    tokenizer_name_or_path = "bert-base-cased"
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path=tokenizer_name_or_path,
+        add_reversed_relations=True,
+    )
+    document = TestDocument(text="Entity A works at B.")
+    document.entities.extend(
+        [LabeledSpan(start=0, end=8, label="PER"), LabeledSpan(start=18, end=19, label="PER")]
+    )
+    document.relations.append(
+        BinaryRelation(
+            head=document.entities[0],
+            tail=document.entities[1],
+            label=f"per:employee_of{taskmodule.reversed_relation_label_suffix}",
+        )
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        taskmodule.prepare([document])
+    assert (
+        str(excinfo.value)
+        == "the relation label 'per:employee_of_reversed' already ends with the reversed_relation_label_suffix "
+        "'_reversed', this is not allowed because we would not know if we should strip the suffix and revert "
+        "the arguments during inference or not"
+    )
+
+
 def test_encode_input_with_add_reversed_relations_with_symmetric_relations(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
@@ -1038,6 +1073,17 @@ def test_encode_input_with_add_reversed_relations_with_wrong_relation_type(
         == "the taskmodule does not yet support adding reversed relations for type:"
         " <class 'pytorch_ie.annotations.NaryRelation'>"
     )
+
+
+def test_inner_span_distance_overlap():
+    dist = inner_span_distance((0, 2), (1, 3))
+    assert dist == -1
+
+
+def test_span_distance_unknown_type():
+    with pytest.raises(ValueError) as excinfo:
+        span_distance((0, 1), (2, 3), "unknown")
+    assert str(excinfo.value) == "unknown distance_type=unknown. use one of: inner"
 
 
 def test_encode_input_with_max_argument_distance():
