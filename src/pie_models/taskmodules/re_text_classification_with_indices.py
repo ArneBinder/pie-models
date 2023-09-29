@@ -729,6 +729,13 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         head, tail = tail, head
                     # If the predicted label is symmetric, we sort the arguments by its center.
                     elif label in self.symmetric_relations:
+                        if not (isinstance(head, Span) and isinstance(tail, Span)):
+                            raise ValueError(
+                                f"the taskmodule expects the relation arguments of the candidate_annotation"
+                                f"to be of type Span, but got head of type: {type(head)} and tail of type: "
+                                f"{type(tail)}"
+                            )
+                        # swap head and tail if the center of head is larger than the center of tail
                         if (head.start + head.end) / 2 < (tail.start + tail.end) / 2:
                             head, tail = tail, head
                 new_annotation = BinaryRelation(
