@@ -853,7 +853,7 @@ def test_relation_argument_role_unknown(documents):
     )
 
 
-def test_encode_with_create_relation_candidates(documents):
+def test_encode_input_with_add_candidate_relations(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
         tokenizer_name_or_path=tokenizer_name_or_path,
@@ -861,12 +861,13 @@ def test_encode_with_create_relation_candidates(documents):
     )
     taskmodule.prepare(documents)
     documents_without_relations = []
+    encodings = []
     # just take the first three documents
     for doc in documents[:3]:
         doc_without_relations = doc.copy()
         doc_without_relations.relations.clear()
         documents_without_relations.append(doc_without_relations)
-    encodings = taskmodule.encode(documents_without_relations)
+        encodings.extend(taskmodule.encode(doc_without_relations))
     assert len(encodings) == 4
 
     # There are no entities in the first document, so there are no created relation candidates
