@@ -347,7 +347,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             if rel_args in rel_args_to_relation:
                 prev_label = rel_args_to_relation[rel_args].label
                 raise ValueError(
-                    f"there are multiple labels for the relation arguments {rel_args}: {prev_label} and {rel.label}"
+                    f"there are multiple relations with the same arguments {rel_args}: "
+                    f"previous label='{prev_label}' and current label='{rel.label}'"
                 )
             rel_args_to_relation[rel_args] = rel
         for rel in relations:
@@ -355,36 +356,37 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
             label = rel.label
             if label.endswith(self.reversed_relation_label_suffix):
-                logger.warning(
-                    f"the relation has the label '{label}' which already ends with the "
-                    f"reversed_relation_label_suffix='{self.reversed_relation_label_suffix}', "
-                    f"do not add a reversed relation for it"
+                raise ValueError(
+                    f"The relation has the label '{label}' which already ends with the "
+                    f"reversed_relation_label_suffix='{self.reversed_relation_label_suffix}'. "
+                    f"It looks like the relation is already reversed, which is not allowed."
                 )
-            else:
-                rel_args = get_relation_arguments(rel)
-                if isinstance(rel, BinaryRelation):
-                    rel_args_reversed = (rel_args[1], rel_args[0])
-                    if rel.label not in self.symmetric_relations:
-                        label += self.reversed_relation_label_suffix
-                    if rel_args_reversed in rel_args_to_relation:
-                        prev_label = rel_args_to_relation[rel_args_reversed].label
-                        raise ValueError(
-                            f"can not add the reversed relation with arguments={rel_args_reversed} and label={label} "
-                            f"because there is already a relation with label {prev_label} for these arguments"
-                        )
 
-                    reversed_rel = BinaryRelation(
-                        head=rel.tail,
-                        tail=rel.head,
-                        label=label,
-                        score=rel.score,
+            rel_args = get_relation_arguments(rel)
+            if isinstance(rel, BinaryRelation):
+                if rel.label not in self.symmetric_relations:
+                    label += self.reversed_relation_label_suffix
+                rel_args_reversed = (rel_args[1], rel_args[0])
+                if rel_args_reversed in rel_args_to_relation:
+                    prev_label = rel_args_to_relation[rel_args_reversed].label
+                    raise ValueError(
+                        f"can not add the reversed relation with arguments={rel_args_reversed} and "
+                        f"label={label} because there is already a relation with label {prev_label} for "
+                        f"these arguments"
                     )
-                    with_reversed_relations.append(reversed_rel)
-                    rel_args_to_relation[rel_args_reversed] = reversed_rel
-                else:
-                    raise NotImplementedError(
-                        f"the taskmodule does not yet support adding reversed relations for type: {type(rel)}"
-                    )
+
+                reversed_rel = BinaryRelation(
+                    head=rel.tail,
+                    tail=rel.head,
+                    label=label,
+                    score=rel.score,
+                )
+                with_reversed_relations.append(reversed_rel)
+                rel_args_to_relation[rel_args_reversed] = reversed_rel
+            else:
+                raise NotImplementedError(
+                    f"the taskmodule does not yet support adding reversed relations for type: {type(rel)}"
+                )
 
         return with_reversed_relations
 
