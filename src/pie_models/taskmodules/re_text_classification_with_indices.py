@@ -213,6 +213,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         entity_labels: Optional[List[str]] = None,
         reversed_relation_label_suffix: str = "_reversed",
         symmetric_relations: Optional[List[str]] = None,
+        reverse_symmetric_relations: bool = True,
         max_argument_distance: Optional[int] = None,
         max_argument_distance_type: str = "inner",
         max_window: Optional[int] = None,
@@ -241,6 +242,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self.none_label = none_label
         self.reversed_relation_label_suffix = reversed_relation_label_suffix
         self.symmetric_relations = set(symmetric_relations or [])
+        self.reverse_symmetric_relations = reverse_symmetric_relations
         self.max_argument_distance = max_argument_distance
         self.max_argument_distance_type = max_argument_distance_type
         self.max_window = max_window
@@ -356,6 +358,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             with_reversed_relations.append(rel)
 
             label = rel.label
+            if label in self.symmetric_relations and not self.reverse_symmetric_relations:
+                continue
             if label.endswith(self.reversed_relation_label_suffix):
                 raise ValueError(
                     f"doc.id={doc_id}: The relation has the label '{label}' which already ends with the "
@@ -774,7 +778,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         label = label[: -len(self.reversed_relation_label_suffix)]
                         head, tail = tail, head
                     # If the predicted label is symmetric, we sort the arguments by its center.
-                    elif label in self.symmetric_relations:
+                    elif label in self.symmetric_relations and self.reverse_symmetric_relations:
                         if not (isinstance(head, Span) and isinstance(tail, Span)):
                             raise ValueError(
                                 f"the taskmodule expects the relation arguments of the candidate_annotation"
