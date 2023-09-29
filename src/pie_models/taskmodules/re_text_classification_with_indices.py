@@ -347,7 +347,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             rel_args = get_relation_arguments(rel)
             if rel_args in rel_args_to_relation:
                 prev_label = rel_args_to_relation[rel_args].label
-                raise ValueError(
+                logger.warning(
                     f"doc.id={doc_id}: there are multiple relations with the same arguments {rel_args}: "
                     f"previous label='{prev_label}' and current label='{rel.label}'"
                 )
