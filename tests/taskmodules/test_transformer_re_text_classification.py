@@ -905,6 +905,39 @@ def test_encode_input_with_add_candidate_relations(documents):
     assert relation.label == "no_relation"
 
 
+def test_encode_input_with_add_reversed_relations(documents):
+    tokenizer_name_or_path = "bert-base-cased"
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path=tokenizer_name_or_path,
+        add_reversed_relations=True,
+    )
+    taskmodule.prepare(documents)
+    encodings = []
+    # just take the first three documents
+    for doc in documents[:3]:
+        encodings.extend(taskmodule.encode_input(doc))
+
+    assert len(encodings) == 2
+
+    # There are no relations in the first and last document, so there are also no new reversed relations
+
+    encoding = encodings[0]
+    assert encoding.document == documents[1]
+    assert encoding.document.text == "Entity A works at B."
+    relation = encoding.metadata["candidate_annotation"]
+    assert str(relation.head) == "Entity A"
+    assert str(relation.tail) == "B"
+    assert relation.label == "per:employee_of"
+
+    encoding = encodings[1]
+    assert encoding.document == documents[1]
+    assert encoding.document.text == "Entity A works at B."
+    relation = encoding.metadata["candidate_annotation"]
+    assert str(relation.head) == "B"
+    assert str(relation.tail) == "Entity A"
+    assert relation.label == "per:employee_of_reversed"
+
+
 def test_encode_with_empty_partition_layer(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
