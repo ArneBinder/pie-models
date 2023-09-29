@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import re
 from dataclasses import dataclass
@@ -7,11 +8,16 @@ import pytest
 import torch
 from pytorch_ie.annotations import BinaryRelation, Label, LabeledSpan, NaryRelation
 from pytorch_ie.core import Annotation, AnnotationList, annotation_field
-from pytorch_ie.documents import TextDocument
+from pytorch_ie.documents import TextBasedDocument, TextDocument
 
 from pie_models.taskmodules import RETextClassificationWithIndicesTaskModule
-from pie_models.taskmodules.re_text_classification_with_indices import HEAD, TAIL
+from pie_models.taskmodules.re_text_classification_with_indices import (
+    HEAD,
+    TAIL,
+    span_distance,
+)
 from tests import _config_to_str
+from tests.conftest import TestDocument
 
 CONFIGS = [
     {"add_type_to_marker": False, "append_markers": False},
@@ -905,6 +911,45 @@ def test_encode_input_with_add_candidate_relations(documents):
     assert relation.label == "no_relation"
 
 
+@pytest.fixture
+def document_with_nary_relations():
+    @dataclasses.dataclass
+    class TestDocumentWithNaryRelations(TextBasedDocument):
+        entities: AnnotationList[LabeledSpan] = annotation_field(target="text")
+        relations: AnnotationList[NaryRelation] = annotation_field(target="entities")
+
+    document = TestDocumentWithNaryRelations(text="Entity A works at B.")
+    document.entities.append(LabeledSpan(start=0, end=8, label="PER"))
+    document.entities.append(LabeledSpan(start=18, end=19, label="PER"))
+    document.relations.append(
+        NaryRelation(
+            arguments=tuple(document.entities),
+            roles=tuple(["head", "tail"]),
+            label="per:employee_of",
+        )
+    )
+    return document
+
+
+def test_encode_input_with_add_candidate_relations_with_wrong_relation_type(
+    document_with_nary_relations,
+):
+    doc = document_with_nary_relations
+
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
+        add_candidate_relations=True,
+    )
+    taskmodule.prepare([doc])
+    with pytest.raises(NotImplementedError) as excinfo:
+        encodings = taskmodule.encode_input(doc)
+    assert (
+        str(excinfo.value)
+        == "the taskmodule does not yet support adding relation candidates for type: "
+        "<class 'pytorch_ie.annotations.NaryRelation'>"
+    )
+
+
 def test_encode_input_with_add_reversed_relations(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
@@ -921,6 +966,7 @@ def test_encode_input_with_add_reversed_relations(documents):
 
     # There are no relations in the first and last document, so there are also no new reversed relations
 
+    # this is the original relation
     encoding = encodings[0]
     assert encoding.document == documents[1]
     assert encoding.document.text == "Entity A works at B."
@@ -929,6 +975,7 @@ def test_encode_input_with_add_reversed_relations(documents):
     assert str(relation.tail) == "B"
     assert relation.label == "per:employee_of"
 
+    # this is the reversed relation
     encoding = encodings[1]
     assert encoding.document == documents[1]
     assert encoding.document.text == "Entity A works at B."
@@ -936,6 +983,147 @@ def test_encode_input_with_add_reversed_relations(documents):
     assert str(relation.head) == "B"
     assert str(relation.tail) == "Entity A"
     assert relation.label == "per:employee_of_reversed"
+
+
+def test_encode_input_with_add_reversed_relations_with_symmetric_relations(documents):
+    tokenizer_name_or_path = "bert-base-cased"
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path=tokenizer_name_or_path,
+        add_reversed_relations=True,
+        symmetric_relations=["per:employee_of"],
+    )
+    taskmodule.prepare(documents)
+    encodings = []
+    # just take the first three documents
+    for doc in documents[:3]:
+        encodings.extend(taskmodule.encode_input(doc))
+
+    assert len(encodings) == 2
+
+    # There are no relations in the first and last document, so there are also no new reversed relations
+
+    # this is the original relation
+    encoding = encodings[0]
+    assert encoding.document == documents[1]
+    assert encoding.document.text == "Entity A works at B."
+    relation = encoding.metadata["candidate_annotation"]
+    assert str(relation.head) == "Entity A"
+    assert str(relation.tail) == "B"
+    assert relation.label == "per:employee_of"
+
+    # this is the reversed relation
+    encoding = encodings[1]
+    assert encoding.document == documents[1]
+    assert encoding.document.text == "Entity A works at B."
+    relation = encoding.metadata["candidate_annotation"]
+    assert str(relation.head) == "B"
+    assert str(relation.tail) == "Entity A"
+    assert relation.label == "per:employee_of"
+
+
+def test_encode_input_with_add_reversed_relations_with_wrong_relation_type(
+    document_with_nary_relations,
+):
+    doc = document_with_nary_relations
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
+        add_reversed_relations=True,
+        symmetric_relations=["per:employee_of"],
+    )
+    taskmodule.prepare([doc])
+    with pytest.raises(NotImplementedError) as excinfo:
+        encodings = taskmodule.encode_input(doc)
+    assert (
+        str(excinfo.value)
+        == "the taskmodule does not yet support adding reversed relations for type:"
+        " <class 'pytorch_ie.annotations.NaryRelation'>"
+    )
+
+
+def test_encode_input_with_max_argument_distance():
+    document = TestDocument(text="Entity A works at B and C.")
+    e0 = LabeledSpan(start=0, end=8, label="PER")
+    e1 = LabeledSpan(start=18, end=19, label="PER")
+    e2 = LabeledSpan(start=24, end=25, label="PER")
+    document.entities.extend([e0, e1, e2])
+    assert str(document.entities[0]) == "Entity A"
+    assert str(document.entities[1]) == "B"
+    assert str(document.entities[2]) == "C"
+    document.relations.append(
+        BinaryRelation(
+            head=document.entities[0], tail=document.entities[1], label="per:employee_of"
+        )
+    )
+    document.relations.append(
+        BinaryRelation(
+            head=document.entities[0], tail=document.entities[2], label="per:employee_of"
+        )
+    )
+    dist_01 = span_distance((e0.start, e0.end), (e1.start, e1.end), "inner")
+    dist_02 = span_distance((e0.start, e0.end), (e2.start, e2.end), "inner")
+    assert dist_01 == 10
+    assert dist_02 == 16
+
+    tokenizer_name_or_path = "bert-base-cased"
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path=tokenizer_name_or_path,
+        max_argument_distance=10,
+    )
+    taskmodule.prepare([document])
+    encodings = taskmodule.encode_input(document)
+
+    # there are two relations, but only one is within the max_argument_distance
+    assert len(encodings) == 1
+    relation = encodings[0].metadata["candidate_annotation"]
+    assert str(relation.head) == "Entity A"
+    assert str(relation.tail) == "B"
+    assert relation.label == "per:employee_of"
+
+
+def test_encode_input_with_max_argument_distance_with_wrong_relation_type(
+    document_with_nary_relations,
+):
+    doc = document_with_nary_relations
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
+        max_argument_distance=10,
+    )
+    taskmodule.prepare([doc])
+    with pytest.raises(NotImplementedError) as excinfo:
+        encodings = taskmodule.encode_input(doc)
+    assert (
+        str(excinfo.value)
+        == "the taskmodule does not yet support filtering relation candidates for type: "
+        "<class 'pytorch_ie.annotations.NaryRelation'>"
+    )
+
+
+def test_encode_input_with_max_argument_distance_with_wrong_argument_type(
+    document_with_nary_relations,
+):
+    @dataclasses.dataclass
+    class TestDocumentWithWrongArgumentType(TextBasedDocument):
+        entities: AnnotationList[Label] = annotation_field()
+        relations: AnnotationList[BinaryRelation] = annotation_field(target="entities")
+
+    doc = TestDocumentWithWrongArgumentType(text="Entity A works at B and C.")
+    doc.entities.extend([Label(label="A"), Label(label="B"), Label(label="C")])
+    doc.relations.append(
+        BinaryRelation(head=doc.entities[0], tail=doc.entities[1], label="per:employee_of")
+    )
+
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
+        max_argument_distance=10,
+    )
+    taskmodule.prepare([doc])
+    with pytest.raises(NotImplementedError) as excinfo:
+        encodings = taskmodule.encode_input(doc)
+    assert (
+        str(excinfo.value)
+        == "the taskmodule does not yet support filtering relation candidates with arguments of type: "
+        "<class 'pytorch_ie.annotations.Label'> and <class 'pytorch_ie.annotations.Label'>"
+    )
 
 
 def test_encode_with_empty_partition_layer(documents):
