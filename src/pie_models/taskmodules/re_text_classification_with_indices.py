@@ -288,20 +288,19 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
             for relation in relations:
                 relation_labels.add(relation.label)
+                if self.add_reversed_relations:
+                    if relation.label.endswith(self.reversed_relation_label_suffix):
+                        raise ValueError(
+                            f"doc.id={document.id}: the relation label '{relation.label}' already ends with "
+                            f"the reversed_relation_label_suffix '{self.reversed_relation_label_suffix}', "
+                            f"this is not allowed because we would not know if we should strip the suffix and "
+                            f"revert the arguments during inference or not"
+                        )
+                    if relation.label not in self.symmetric_relations:
+                        relation_labels.add(relation.label + self.reversed_relation_label_suffix)
 
         if self.none_label in relation_labels:
             relation_labels.remove(self.none_label)
-
-        if self.add_reversed_relations:
-            for rel_label in set(relation_labels):
-                if rel_label.endswith(self.reversed_relation_label_suffix):
-                    raise ValueError(
-                        f"the relation label '{rel_label}' already ends with the reversed_relation_label_suffix "
-                        f"'{self.reversed_relation_label_suffix}', this is not allowed because we would not know "
-                        f"if we should strip the suffix and revert the arguments during inference or not"
-                    )
-                if rel_label not in self.symmetric_relations:
-                    relation_labels.add(rel_label + self.reversed_relation_label_suffix)
 
         self.label_to_id = {label: i + 1 for i, label in enumerate(sorted(relation_labels))}
         self.label_to_id[self.none_label] = 0
@@ -339,7 +338,9 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
         self.id_to_label = {v: k for k, v in self.label_to_id.items()}
 
-    def _add_reversed_relations(self, relations: Sequence[Annotation]) -> List[Annotation]:
+    def _add_reversed_relations(
+        self, relations: Sequence[Annotation], doc_id: Optional[str] = None
+    ) -> List[Annotation]:
         with_reversed_relations: List[Annotation] = []
         rel_args_to_relation: Dict[Tuple[Annotation, ...], BinaryRelation] = {}
         for rel in relations:
@@ -347,7 +348,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             if rel_args in rel_args_to_relation:
                 prev_label = rel_args_to_relation[rel_args].label
                 raise ValueError(
-                    f"there are multiple relations with the same arguments {rel_args}: "
+                    f"doc.id={doc_id}: there are multiple relations with the same arguments {rel_args}: "
                     f"previous label='{prev_label}' and current label='{rel.label}'"
                 )
             rel_args_to_relation[rel_args] = rel
@@ -357,7 +358,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             label = rel.label
             if label.endswith(self.reversed_relation_label_suffix):
                 raise ValueError(
-                    f"The relation has the label '{label}' which already ends with the "
+                    f"doc.id={doc_id}: The relation has the label '{label}' which already ends with the "
                     f"reversed_relation_label_suffix='{self.reversed_relation_label_suffix}'. "
                     f"It looks like the relation is already reversed, which is not allowed."
                 )
@@ -370,7 +371,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 if rel_args_reversed in rel_args_to_relation:
                     prev_label = rel_args_to_relation[rel_args_reversed].label
                     raise ValueError(
-                        f"can not add the reversed relation with arguments={rel_args_reversed} and "
+                        f"doc.id={doc_id}: can not add the reversed relation with arguments={rel_args_reversed} and "
                         f"label={label} because there is already a relation with label {prev_label} for "
                         f"these arguments"
                     )
@@ -385,7 +386,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 rel_args_to_relation[rel_args_reversed] = reversed_rel
             else:
                 raise NotImplementedError(
-                    f"the taskmodule does not yet support adding reversed relations for type: {type(rel)}"
+                    f"doc.id={doc_id}: the taskmodule does not yet support adding reversed relations for type: "
+                    f"{type(rel)}"
                 )
 
         return with_reversed_relations
@@ -394,6 +396,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self,
         relations: Sequence[Annotation],
         entities: Sequence[LabeledSpan],
+        doc_id: Optional[str] = None,
     ) -> List[BinaryRelation]:
         relation_candidates: List[BinaryRelation] = []
         arguments_to_relation: Dict[Tuple[Annotation, Annotation], BinaryRelation] = {}
@@ -402,7 +405,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 arguments_to_relation[(rel.head, rel.tail)] = rel
             else:
                 raise NotImplementedError(
-                    f"the taskmodule does not yet support adding relation candidates for type: {type(rel)}"
+                    f"doc.id={doc_id}: the taskmodule does not yet support adding relation candidates for type: "
+                    f"{type(rel)}"
                 )
 
         # iterate over all possible argument candidates
@@ -427,6 +431,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
     def _filter_relations(
         self,
         relations: Sequence[BinaryRelation],
+        doc_id: Optional[str] = None,
     ) -> Sequence[BinaryRelation]:
         # for now, we just support filtering by distance
         if self.max_argument_distance is None:
@@ -447,12 +452,13 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                             result.append(rel)
                     else:
                         raise NotImplementedError(
-                            f"the taskmodule does not yet support filtering relation candidates with arguments "
-                            f"of type: {type(rel.head)} and {type(rel.tail)}"
+                            f"doc.id={doc_id}: the taskmodule does not yet support filtering relation candidates "
+                            f"with arguments of type: {type(rel.head)} and {type(rel.tail)}"
                         )
                 else:
                     raise NotImplementedError(
-                        f"the taskmodule does not yet support filtering relation candidates for type: {type(rel)}"
+                        f"doc.id={doc_id}: the taskmodule does not yet support filtering relation candidates for "
+                        f"type: {type(rel)}"
                     )
             return result
 
@@ -463,12 +469,12 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
     ) -> Optional[Union[TaskEncodingType, Sequence[TaskEncodingType]]]:
         relations: Sequence[BinaryRelation] = self.get_relation_layer(document)
         if self.add_reversed_relations:
-            relations = self._add_reversed_relations(relations=relations)
+            relations = self._add_reversed_relations(relations=relations, doc_id=document.id)
         if self.add_candidate_relations:
             relations = self._add_candidate_relations(
-                relations=relations, entities=self.get_entity_layer(document)
+                relations=relations, entities=self.get_entity_layer(document), doc_id=document.id
             )
-        relations = self._filter_relations(relations=relations)
+        relations = self._filter_relations(relations=relations, doc_id=document.id)
 
         partitions: Sequence[Span]
         if self.partition_annotation is not None:

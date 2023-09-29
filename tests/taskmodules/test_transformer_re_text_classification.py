@@ -925,7 +925,9 @@ def document_with_nary_relations():
         entities: AnnotationList[LabeledSpan] = annotation_field(target="text")
         relations: AnnotationList[NaryRelation] = annotation_field(target="entities")
 
-    document = TestDocumentWithNaryRelations(text="Entity A works at B.")
+    document = TestDocumentWithNaryRelations(
+        text="Entity A works at B.", id="doc_with_nary_relations"
+    )
     document.entities.append(LabeledSpan(start=0, end=8, label="PER"))
     document.entities.append(LabeledSpan(start=18, end=19, label="PER"))
     document.relations.append(
@@ -952,8 +954,8 @@ def test_encode_input_with_add_candidate_relations_with_wrong_relation_type(
         encodings = taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
-        == "the taskmodule does not yet support adding relation candidates for type: "
-        "<class 'pytorch_ie.annotations.NaryRelation'>"
+        == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding "
+        "relation candidates for type: <class 'pytorch_ie.annotations.NaryRelation'>"
     )
 
 
@@ -998,7 +1000,9 @@ def test_prepare_with_add_reversed_relations_with_label_has_suffix():
         tokenizer_name_or_path=tokenizer_name_or_path,
         add_reversed_relations=True,
     )
-    document = TestDocument(text="Entity A works at B.")
+    document = TestDocument(
+        text="Entity A works at B.", id="doc_with_relation_with_reversed_suffix"
+    )
     document.entities.extend(
         [LabeledSpan(start=0, end=8, label="PER"), LabeledSpan(start=18, end=19, label="PER")]
     )
@@ -1014,9 +1018,9 @@ def test_prepare_with_add_reversed_relations_with_label_has_suffix():
         taskmodule.prepare([document])
     assert (
         str(excinfo.value)
-        == "the relation label 'per:employee_of_reversed' already ends with the reversed_relation_label_suffix "
-        "'_reversed', this is not allowed because we would not know if we should strip the suffix and revert "
-        "the arguments during inference or not"
+        == "doc.id=doc_with_relation_with_reversed_suffix: the relation label 'per:employee_of_reversed' "
+        "already ends with the reversed_relation_label_suffix '_reversed', this is not allowed because "
+        "we would not know if we should strip the suffix and revert the arguments during inference or not"
     )
 
 
@@ -1070,8 +1074,8 @@ def test_encode_input_with_add_reversed_relations_with_wrong_relation_type(
         encodings = taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
-        == "the taskmodule does not yet support adding reversed relations for type:"
-        " <class 'pytorch_ie.annotations.NaryRelation'>"
+        == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding "
+        "reversed relations for type: <class 'pytorch_ie.annotations.NaryRelation'>"
     )
 
 
@@ -1087,7 +1091,9 @@ def test_span_distance_unknown_type():
 
 
 def test_encode_input_with_max_argument_distance():
-    document = TestDocument(text="Entity A works at B and C.")
+    document = TestDocument(
+        text="Entity A works at B and C.", id="doc_with_three_entities_and_two_relations"
+    )
     e0 = LabeledSpan(start=0, end=8, label="PER")
     e1 = LabeledSpan(start=18, end=19, label="PER")
     e2 = LabeledSpan(start=24, end=25, label="PER")
@@ -1139,8 +1145,8 @@ def test_encode_input_with_max_argument_distance_with_wrong_relation_type(
         encodings = taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
-        == "the taskmodule does not yet support filtering relation candidates for type: "
-        "<class 'pytorch_ie.annotations.NaryRelation'>"
+        == "doc.id=doc_with_nary_relations: the taskmodule does not yet support filtering "
+        "relation candidates for type: <class 'pytorch_ie.annotations.NaryRelation'>"
     )
 
 
@@ -1152,7 +1158,9 @@ def test_encode_input_with_max_argument_distance_with_wrong_argument_type(
         entities: AnnotationList[Label] = annotation_field()
         relations: AnnotationList[BinaryRelation] = annotation_field(target="entities")
 
-    doc = TestDocumentWithWrongArgumentType(text="Entity A works at B and C.")
+    doc = TestDocumentWithWrongArgumentType(
+        text="Entity A works at B and C.", id="doc_with_wrong_argument_type"
+    )
     doc.entities.extend([Label(label="A"), Label(label="B"), Label(label="C")])
     doc.relations.append(
         BinaryRelation(head=doc.entities[0], tail=doc.entities[1], label="per:employee_of")
@@ -1167,8 +1175,9 @@ def test_encode_input_with_max_argument_distance_with_wrong_argument_type(
         encodings = taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
-        == "the taskmodule does not yet support filtering relation candidates with arguments of type: "
-        "<class 'pytorch_ie.annotations.Label'> and <class 'pytorch_ie.annotations.Label'>"
+        == "doc.id=doc_with_wrong_argument_type: the taskmodule does not yet support filtering "
+        "relation candidates with arguments of type: <class 'pytorch_ie.annotations.Label'> "
+        "and <class 'pytorch_ie.annotations.Label'>"
     )
 
 
