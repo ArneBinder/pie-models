@@ -948,14 +948,15 @@ def test_encode_input_with_add_candidate_relations_with_wrong_relation_type(
     taskmodule = RETextClassificationWithIndicesTaskModule(
         tokenizer_name_or_path="bert-base-cased",
         add_candidate_relations=True,
+        argument_role_to_marker={HEAD: "H", "arg2": "T"},
     )
     taskmodule.prepare([doc])
     with pytest.raises(NotImplementedError) as excinfo:
         encodings = taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
-        == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding "
-        "relation candidates for type: <class 'pytorch_ie.annotations.NaryRelation'>"
+        == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding relation candidates "
+        "with argument roles other than 'head' and 'tail': ['arg2', 'head']"
     )
 
 
@@ -1150,37 +1151,6 @@ def test_encode_input_with_max_argument_distance_with_wrong_relation_type(
     )
 
 
-def test_encode_input_with_max_argument_distance_with_wrong_argument_type(
-    document_with_nary_relations,
-):
-    @dataclasses.dataclass
-    class TestDocumentWithWrongArgumentType(TextBasedDocument):
-        entities: AnnotationList[Label] = annotation_field()
-        relations: AnnotationList[BinaryRelation] = annotation_field(target="entities")
-
-    doc = TestDocumentWithWrongArgumentType(
-        text="Entity A works at B and C.", id="doc_with_wrong_argument_type"
-    )
-    doc.entities.extend([Label(label="A"), Label(label="B"), Label(label="C")])
-    doc.relations.append(
-        BinaryRelation(head=doc.entities[0], tail=doc.entities[1], label="per:employee_of")
-    )
-
-    taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path="bert-base-cased",
-        max_argument_distance=10,
-    )
-    taskmodule.prepare([doc])
-    with pytest.raises(NotImplementedError) as excinfo:
-        encodings = taskmodule.encode_input(doc)
-    assert (
-        str(excinfo.value)
-        == "doc.id=doc_with_wrong_argument_type: the taskmodule does not yet support filtering "
-        "relation candidates with arguments of type: <class 'pytorch_ie.annotations.Label'> "
-        "and <class 'pytorch_ie.annotations.Label'>"
-    )
-
-
 def test_encode_with_empty_partition_layer(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
@@ -1199,36 +1169,6 @@ def test_encode_with_empty_partition_layer(documents):
     # since there are no sentences, but we use partition_annotation="sentences",
     # there are no encodings
     assert len(encodings) == 0
-
-
-def test_encode_binary_relation_with_wrong_argument_type():
-    tokenizer_name_or_path = "bert-base-cased"
-    taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path=tokenizer_name_or_path,
-        # setting label_to_id and entity_labels makes the taskmodule prepared
-        label_to_id={"has_wrong_arguments": 1},
-        entity_labels=["a", "b"],
-    )
-    taskmodule._post_prepare()
-
-    @dataclass
-    class DocWithBinaryRelationAndWrongArgumentType(TextDocument):
-        entities: AnnotationList[Label] = annotation_field()
-        relations: AnnotationList[BinaryRelation] = annotation_field(target="entities")
-
-    doc = DocWithBinaryRelationAndWrongArgumentType(text="hello world")
-    label_a = Label(label="a")
-    label_b = Label(label="b")
-    doc.entities.extend([label_a, label_b])
-    doc.relations.append(BinaryRelation(head=label_a, tail=label_b, label="has_wrong_arguments"))
-
-    with pytest.raises(ValueError) as excinfo:
-        taskmodule.encode([doc])
-    assert (
-        str(excinfo.value)
-        == "the taskmodule expects the relation arguments to be of type LabeledSpan, but got "
-        "<class 'pytorch_ie.annotations.Label'> and <class 'pytorch_ie.annotations.Label'>"
-    )
 
 
 def test_encode_nary_relatio():
@@ -1272,44 +1212,6 @@ def test_encode_nary_relatio():
     assert rel.label == "rel"
 
 
-def test_encode_nary_relation_with_wrong_argument_type():
-    tokenizer_name_or_path = "bert-base-cased"
-    taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path=tokenizer_name_or_path,
-        # setting label_to_id and entity_labels makes the taskmodule prepared
-        label_to_id={"has_wrong_arguments": 1},
-        entity_labels=["a", "b", "c"],
-    )
-    taskmodule._post_prepare()
-
-    @dataclass
-    class DocWithNaryRelationAndWrongArgumentType(TextDocument):
-        entities: AnnotationList[Label] = annotation_field()
-        relations: AnnotationList[NaryRelation] = annotation_field(target="entities")
-
-    doc = DocWithNaryRelationAndWrongArgumentType(text="hello world")
-    label_a = Label(label="a")
-    label_b = Label(label="b")
-    label_c = Label(label="c")
-    doc.entities.extend([label_a, label_b, label_c])
-    doc.relations.append(
-        NaryRelation(
-            arguments=tuple([label_a, label_b, label_c]),
-            roles=tuple(["a", "b", "c"]),
-            label="has_wrong_arguments",
-        )
-    )
-
-    with pytest.raises(ValueError) as excinfo:
-        taskmodule.encode([doc])
-    assert (
-        str(excinfo.value)
-        == "the taskmodule expects the relation arguments to be of type LabeledSpan, but got "
-        "[<class 'pytorch_ie.annotations.Label'>, <class 'pytorch_ie.annotations.Label'>, "
-        "<class 'pytorch_ie.annotations.Label'>]"
-    )
-
-
 def test_encode_unknown_relation_type():
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
@@ -1338,7 +1240,7 @@ def test_encode_unknown_relation_type():
     with pytest.raises(NotImplementedError) as excinfo:
         taskmodule.encode([doc])
     assert str(excinfo.value).startswith(
-        "the taskmodule does not yet support relations of type: "
+        "the taskmodule does not yet support getting relation arguments for type: "
     ) and str(excinfo.value).endswith("<locals>.UnknownRelation'>")
 
 
