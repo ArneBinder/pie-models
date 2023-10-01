@@ -8,6 +8,7 @@ workflow:
 """
 
 import logging
+from collections import defaultdict
 from typing import (
     Any,
     Dict,
@@ -24,6 +25,7 @@ from typing import (
 )
 
 import numpy as np
+import pandas as pd
 import torch
 from pytorch_ie.annotations import (
     BinaryRelation,
@@ -222,6 +224,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         max_window: Optional[int] = None,
         log_first_n_examples: int = 0,
         add_argument_indices_to_input: bool = False,
+        show_statistics: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -256,6 +259,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             self.argument_role_to_marker = {HEAD: "H", TAIL: "T"}
         else:
             self.argument_role_to_marker = argument_role_to_marker
+        self.show_statistics = show_statistics
 
         self.argument_role2idx = {
             role: i for i, role in enumerate(sorted(self.argument_role_to_marker))
@@ -266,6 +270,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self.argument_markers = None
 
         self._logged_examples_counter = 0
+
+        self._reset_statistics()
 
     @property
     def document_type(self) -> Optional[Type[TextDocument]]:
@@ -311,6 +317,29 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         self.label_to_id[self.none_label] = 0
 
         self.entity_labels = sorted(entity_labels)
+
+    def _reset_statistics(self):
+        self._statistics = defaultdict(int)
+
+    def _show_statistics(self):
+        if self.show_statistics:
+            to_show = pd.Series(self._statistics)
+            if len(to_show.index.names) > 1:
+                to_show = to_show.unstack()
+            logger.info(f"statistics:\n{to_show}")
+
+    def increase_counter(self, key: Tuple[Any, ...], value: Optional[int] = 1):
+        if self.show_statistics:
+            key_str = tuple(str(k) for k in key)
+            self._statistics[key_str] += value
+
+    def encode(self, *args, **kwargs):
+        if self.show_statistics:
+            self._reset_statistics()
+        res = super().encode(*args, **kwargs)
+        if self.show_statistics:
+            self._show_statistics()
+        return res
 
     def construct_argument_markers(self) -> List[str]:
         # ignore the typing because we know that this is only called on a prepared taskmodule,
@@ -547,6 +576,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                     for arg in arg_spans
                 ):
                     # TODO: add test case for this
+                    self.increase_counter(key=("skipped_args_not_in_partition", rel.label))
                     continue
 
                 # map character spans to token spans
@@ -564,6 +594,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                     logger.warning(
                         f"Skipping invalid example {document.id}, cannot get argument token slice(s)"
                     )
+                    self.increase_counter(key=("skipped_args_not_aligned", rel.label))
                     continue
 
                 # ignore the typing, because we checked for None above
@@ -709,6 +740,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         metadata=({"candidate_annotation": rel}),
                     )
                 )
+                self.increase_counter(key=("used", rel.label))
 
         return task_encodings
 
