@@ -326,7 +326,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             to_show = pd.Series(self._statistics)
             if len(to_show.index.names) > 1:
                 to_show = to_show.unstack()
-            logger.info(f"statistics:\n{to_show}")
+            logger.info(f"statistics:\n{to_show.to_markdown()}")
 
     def increase_counter(self, key: Tuple[Any, ...], value: Optional[int] = 1):
         if self.show_statistics:
