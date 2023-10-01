@@ -1275,7 +1275,9 @@ def test_encode_with_unaligned_span(caplog):
     assert caplog.records[0].levelname == "WARNING"
     assert (
         caplog.records[0].message
-        == "Skipping invalid example doc1, cannot get argument token slice(s)"
+        == "doc.id=doc1: Skipping invalid example, cannot get argument token slices for "
+           "{LabeledSpan(start=0, end=5, label='a', score=1.0): 'hello', "
+           "LabeledSpan(start=7, end=13, label='a', score=1.0): ' space'}"
     )
 
 

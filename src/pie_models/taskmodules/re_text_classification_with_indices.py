@@ -591,8 +591,10 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 # Check if the mapping was successful. It may fail (and is None) if any argument start or end does not
                 # match a token start or end, respectively.
                 if any(token_slice is None for token_slice in arg_token_slices_including_none):
+                    arg_spans_dict = {arg_span: str(arg_span) for arg_span in arg_spans}
                     logger.warning(
-                        f"Skipping invalid example {document.id}, cannot get argument token slice(s)"
+                        f"doc.id={document.id}: Skipping invalid example, cannot get argument token slices for "
+                        f"{arg_spans_dict}"
                     )
                     self.increase_counter(key=("skipped_args_not_aligned", rel.label))
                     continue
