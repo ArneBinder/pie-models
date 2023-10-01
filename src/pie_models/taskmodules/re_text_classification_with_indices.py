@@ -535,6 +535,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 for entity in all_entities
                 if is_contained_in((entity.start, entity.end), (partition.start, partition.end))
             ]
+            # filter relations that have arguments in the current partition
             entities_set = set(entities)
             relations: Sequence[Annotation] = [
                 rel
@@ -570,15 +571,6 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         f"the taskmodule expects the relation arguments to be of type LabeledSpan, "
                         f"but got {[type(arg) for arg in arg_spans]}"
                     )
-
-                # check if all argument spans are in the current partition
-                if any(
-                    not is_contained_in((arg.start, arg.end), (partition.start, partition.end))
-                    for arg in arg_spans
-                ):
-                    # TODO: add test case for this
-                    self.increase_counter(key=("skipped_args_not_in_partition", rel.label))
-                    continue
 
                 # map character spans to token spans
                 arg_token_slices_including_none = [
