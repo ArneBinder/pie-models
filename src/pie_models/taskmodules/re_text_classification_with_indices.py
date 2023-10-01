@@ -527,6 +527,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             # use single dummy partition
             partitions = [Span(start=0, end=len(document.text))]
 
+        used_relations: List[Annotation] = []
         task_encodings: List[TaskEncodingType] = []
         for partition in partitions:
             entities: List[Span] = [
@@ -743,6 +744,11 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                     )
                 )
                 self.increase_counter(key=("used", rel.label))
+                used_relations.append(rel)
+
+        not_used_relations = set(all_relations) - set(used_relations)
+        for rel in not_used_relations:
+            self.increase_counter(key=("skipped_not_used", rel.label))
 
         return task_encodings
 
