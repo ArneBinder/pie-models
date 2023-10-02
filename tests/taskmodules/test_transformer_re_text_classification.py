@@ -18,7 +18,7 @@ from pie_models.taskmodules.re_text_classification_with_indices import (
     span_distance,
 )
 from tests import _config_to_str
-from tests.conftest import TestDocument
+from tests.conftest import _TABULATE_AVAILABLE, TestDocument
 
 CONFIGS = [
     {"add_type_to_marker": False, "append_markers": False},
@@ -767,20 +767,30 @@ def test_encode_with_windowing(documents):
     ]
 
 
-@pytest.mark.parametrize("add_argument_indices_to_input", [False, True])
-def test_encode_with_add_argument_indices(documents, add_argument_indices_to_input):
+@pytest.fixture(scope="module", params=[False, True])
+def encodings_and_taskmodule_with_argument_indices(request, documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
         tokenizer_name_or_path=tokenizer_name_or_path,
-        add_argument_indices_to_input=add_argument_indices_to_input,
+        add_argument_indices_to_input=request.param,
     )
 
     assert not taskmodule.is_from_pretrained
     taskmodule.prepare(documents)
     task_encodings = taskmodule.encode(documents)
     assert len(task_encodings) == 7
+    return task_encodings, taskmodule
 
-    encoding = task_encodings[0]
+
+def test_encode_with_add_argument_indices(encodings_and_taskmodule_with_argument_indices):
+    encodings, taskmodule = encodings_and_taskmodule_with_argument_indices
+    if taskmodule.add_argument_indices_to_input:
+        assert all(["pooler_start_indices" in encoding.inputs for encoding in encodings])
+        assert all(["pooler_end_indices" in encoding.inputs for encoding in encodings])
+    else:
+        assert not any(["pooler_start_indices" in encoding.inputs for encoding in encodings])
+        assert not any(["pooler_end_indices" in encoding.inputs for encoding in encodings])
+    encoding = encodings[0]
     if taskmodule.add_argument_indices_to_input:
         assert "pooler_start_indices" in encoding.inputs
         assert "pooler_end_indices" in encoding.inputs
@@ -793,7 +803,7 @@ def test_encode_with_add_argument_indices(documents, add_argument_indices_to_inp
         assert "pooler_start_indices" not in encoding.inputs
         assert "pooler_end_indices" not in encoding.inputs
 
-    encoding = task_encodings[3]
+    encoding = encodings[3]
     if taskmodule.add_argument_indices_to_input:
         assert "pooler_start_indices" in encoding.inputs
         assert "pooler_end_indices" in encoding.inputs
@@ -807,29 +817,15 @@ def test_encode_with_add_argument_indices(documents, add_argument_indices_to_inp
         assert "pooler_end_indices" not in encoding.inputs
 
 
-@pytest.mark.parametrize("add_argument_indices_to_input", [False, True])
-def test_collate_with_add_argument_indices(documents, add_argument_indices_to_input):
-    tokenizer_name_or_path = "bert-base-cased"
-    taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path=tokenizer_name_or_path,
-        add_argument_indices_to_input=add_argument_indices_to_input,
-    )
-    taskmodule.prepare(documents)
-    encodings = taskmodule.encode(documents)
-    if add_argument_indices_to_input:
-        assert all(["pooler_start_indices" in encoding.inputs for encoding in encodings])
-        assert all(["pooler_end_indices" in encoding.inputs for encoding in encodings])
-    else:
-        assert not any(["pooler_start_indices" in encoding.inputs for encoding in encodings])
-        assert not any(["pooler_end_indices" in encoding.inputs for encoding in encodings])
-
+def test_collate_with_add_argument_indices(encodings_and_taskmodule_with_argument_indices):
+    encodings, taskmodule = encodings_and_taskmodule_with_argument_indices
     batch_encoding = taskmodule.collate(encodings[:2])
     inputs, targets = batch_encoding
 
     assert "input_ids" in inputs
     assert "attention_mask" in inputs
     assert inputs["input_ids"].shape == inputs["attention_mask"].shape
-    if add_argument_indices_to_input:
+    if taskmodule.add_argument_indices_to_input:
         assert "pooler_start_indices" in inputs
         assert "pooler_end_indices" in inputs
 
@@ -843,16 +839,51 @@ def test_collate_with_add_argument_indices(documents, add_argument_indices_to_in
         assert "pooler_end_indices" not in inputs
 
 
-def test_relation_argument_role_unknown(documents):
-    tokenizer_name_or_path = "bert-base-cased"
+def test_encode_input_multiple_relations_for_same_arguments(caplog):
     taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path=tokenizer_name_or_path,
+        tokenizer_name_or_path="bert-base-cased",
+    )
+    document = TestDocument(text="A founded B.", id="multiple_relations_for_same_arguments")
+    document.entities.append(LabeledSpan(start=0, end=1, label="PER"))
+    document.entities.append(LabeledSpan(start=10, end=11, label="PER"))
+    entities = document.entities
+    assert str(entities[0]) == "A"
+    assert str(entities[1]) == "B"
+    document.relations.extend(
+        [
+            BinaryRelation(head=entities[0], tail=entities[1], label="per:founded_by"),
+            BinaryRelation(head=entities[0], tail=entities[1], label="per:founder"),
+        ]
+    )
+    taskmodule.prepare([document])
+    encodings = taskmodule.encode_input(document)
+
+    assert len(caplog.messages) == 1
+    assert (
+        caplog.messages[0]
+        == "doc.id=multiple_relations_for_same_arguments: there are multiple relations with the same arguments "
+        "(('head', LabeledSpan(start=0, end=1, label='PER', score=1.0)), "
+        "('tail', LabeledSpan(start=10, end=11, label='PER', score=1.0))): previous label='per:founded_by' "
+        "and current label='per:founder'. We only keep the first occurring relation which has the "
+        "label='per:founded_by'."
+    )
+
+    assert len(encodings) == 1
+    relation = encodings[0].metadata["candidate_annotation"]
+    assert str(relation.head) == "A"
+    assert str(relation.tail) == "B"
+    assert relation.label == "per:founded_by"
+
+
+def test_encode_input_argument_role_unknown(documents):
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
         # the tail argument is not in the role_to_marker
         argument_role_to_marker={HEAD: "H"},
     )
     taskmodule.prepare(documents)
     with pytest.raises(ValueError) as excinfo:
-        task_encodings = taskmodule.encode(documents)
+        taskmodule.encode_input(documents[1])
     assert (
         str(excinfo.value)
         == "role=tail not in role_to_marker={'head': 'H'} (did you initialise the taskmodule with "
@@ -861,9 +892,8 @@ def test_relation_argument_role_unknown(documents):
 
 
 def test_encode_input_with_add_candidate_relations(documents):
-    tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
-        tokenizer_name_or_path=tokenizer_name_or_path,
+        tokenizer_name_or_path="bert-base-cased",
         add_candidate_relations=True,
     )
     taskmodule.prepare(documents)
@@ -879,43 +909,25 @@ def test_encode_input_with_add_candidate_relations(documents):
             doc_without_relations.relations.append(relations[0])
         documents_without_relations.append(doc_without_relations)
         encodings.extend(taskmodule.encode(doc_without_relations))
+
     assert len(encodings) == 4
+    relations = [encoding.metadata["candidate_annotation"] for encoding in encodings]
+    texts = [encoding.document.text for encoding in encodings]
+    relation_tuples = [(str(rel.head), rel.label, str(rel.tail)) for rel in relations]
 
     # There are no entities in the first document, so there are no created relation candidates
 
     # this relation was kept
-    encoding = encodings[0]
-    assert encoding.document == documents_without_relations[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "Entity A"
-    assert str(relation.tail) == "B"
-    assert relation.label == "per:employee_of"
+    assert texts[0] == "Entity A works at B."
+    assert relation_tuples[0] == ("Entity A", "per:employee_of", "B")
 
     # the following relations were added
-    encoding = encodings[1]
-    assert encoding.document == documents_without_relations[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "B"
-    assert str(relation.tail) == "Entity A"
-    assert relation.label == "no_relation"
-
-    encoding = encodings[2]
-    assert encoding.document == documents_without_relations[2]
-    assert encoding.document.text == "Entity C and D."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "Entity C"
-    assert str(relation.tail) == "D"
-    assert relation.label == "no_relation"
-
-    encoding = encodings[3]
-    assert encoding.document == documents_without_relations[2]
-    assert encoding.document.text == "Entity C and D."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "D"
-    assert str(relation.tail) == "Entity C"
-    assert relation.label == "no_relation"
+    assert texts[1] == "Entity A works at B."
+    assert relation_tuples[1] == ("B", "no_relation", "Entity A")
+    assert texts[2] == "Entity C and D."
+    assert relation_tuples[2] == ("Entity C", "no_relation", "D")
+    assert texts[3] == "Entity C and D."
+    assert relation_tuples[3] == ("D", "no_relation", "Entity C")
 
 
 @pytest.fixture
@@ -952,7 +964,7 @@ def test_encode_input_with_add_candidate_relations_with_wrong_relation_type(
     )
     taskmodule.prepare([doc])
     with pytest.raises(NotImplementedError) as excinfo:
-        encodings = taskmodule.encode_input(doc)
+        taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
         == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding relation candidates "
@@ -973,26 +985,41 @@ def test_encode_input_with_add_reversed_relations(documents):
         encodings.extend(taskmodule.encode_input(doc))
 
     assert len(encodings) == 2
+    texts = [encoding.document.text for encoding in encodings]
+    relations = [encoding.metadata["candidate_annotation"] for encoding in encodings]
+    relation_tuples = [(str(rel.head), rel.label, str(rel.tail)) for rel in relations]
 
     # There are no relations in the first and last document, so there are also no new reversed relations
 
     # this is the original relation
-    encoding = encodings[0]
-    assert encoding.document == documents[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "Entity A"
-    assert str(relation.tail) == "B"
-    assert relation.label == "per:employee_of"
+    assert texts[0] == "Entity A works at B."
+    assert relation_tuples[0] == ("Entity A", "per:employee_of", "B")
 
     # this is the reversed relation
-    encoding = encodings[1]
-    assert encoding.document == documents[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "B"
-    assert str(relation.tail) == "Entity A"
-    assert relation.label == "per:employee_of_reversed"
+    assert texts[1] == "Entity A works at B."
+    assert relation_tuples[1] == ("B", "per:employee_of_reversed", "Entity A")
+
+    # test that an already reversed relation is not reversed again
+    document = TestDocument(
+        text="Entity A works at B.", id="doc_with_relation_with_reversed_suffix"
+    )
+    document.entities.extend(
+        [LabeledSpan(start=0, end=8, label="PER"), LabeledSpan(start=18, end=19, label="PER")]
+    )
+    document.relations.append(
+        BinaryRelation(
+            head=document.entities[1],
+            tail=document.entities[0],
+            label=f"per:employee_of{taskmodule.reversed_relation_label_suffix}",
+        )
+    )
+    with pytest.raises(ValueError) as excinfo:
+        taskmodule.encode_input(document)
+    assert str(excinfo.value) == (
+        "doc.id=doc_with_relation_with_reversed_suffix: The relation has the label 'per:employee_of_reversed' "
+        "which already ends with the reversed_relation_label_suffix='_reversed'. It looks like the relation is "
+        "already reversed, which is not allowed."
+    )
 
 
 def test_prepare_with_add_reversed_relations_with_label_has_suffix():
@@ -1025,40 +1052,128 @@ def test_prepare_with_add_reversed_relations_with_label_has_suffix():
     )
 
 
-def test_encode_input_with_add_reversed_relations_with_symmetric_relations(documents):
+@pytest.mark.parametrize("reverse_symmetric_relations", [False, True])
+def test_encode_input_with_add_reversed_relations_with_symmetric_relations(
+    reverse_symmetric_relations, caplog
+):
+    document = TestDocument(
+        text="Entity A is married with B, but likes C, who is married with D.",
+        id="doc_with_symmetric_relation",
+    )
+    document.entities.extend(
+        [
+            LabeledSpan(start=0, end=8, label="PER"),
+            LabeledSpan(start=25, end=26, label="PER"),
+            LabeledSpan(start=38, end=39, label="PER"),
+            LabeledSpan(start=61, end=62, label="PER"),
+        ]
+    )
+    assert str(document.entities[0]) == "Entity A"
+    assert str(document.entities[1]) == "B"
+    assert str(document.entities[2]) == "C"
+    assert str(document.entities[3]) == "D"
+    document.relations.extend(
+        [
+            BinaryRelation(
+                head=document.entities[0], tail=document.entities[1], label="per:is_married_with"
+            ),
+            BinaryRelation(
+                head=document.entities[0], tail=document.entities[2], label="per:likes"
+            ),
+            BinaryRelation(
+                head=document.entities[2], tail=document.entities[3], label="per:is_married_with"
+            ),
+            BinaryRelation(
+                head=document.entities[3], tail=document.entities[2], label="per:is_married_with"
+            ),
+        ]
+    )
+
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
         tokenizer_name_or_path=tokenizer_name_or_path,
         add_reversed_relations=True,
-        symmetric_relations=["per:employee_of"],
+        symmetric_relations=["per:is_married_with"],
+        reverse_symmetric_relations=reverse_symmetric_relations,
     )
-    taskmodule.prepare(documents)
-    encodings = []
-    # just take the first three documents
-    for doc in documents[:3]:
-        encodings.extend(taskmodule.encode_input(doc))
+    taskmodule.prepare([document])
+    encodings = taskmodule.encode_input(document)
+    relations = [encoding.metadata["candidate_annotation"] for encoding in encodings]
+    relation_tuples = [
+        (str(relation.head), relation.label, str(relation.tail)) for relation in relations
+    ]
+    if reverse_symmetric_relations:
+        assert relation_tuples == [
+            ("Entity A", "per:is_married_with", "B"),
+            ("Entity A", "per:likes", "C"),
+            ("C", "per:is_married_with", "D"),
+            ("D", "per:is_married_with", "C"),
+            ("B", "per:is_married_with", "Entity A"),
+            ("C", "per:likes_reversed", "Entity A"),
+        ]
+        assert len(caplog.messages) == 2
+        assert (
+            caplog.messages[0]
+            == "doc.id=doc_with_symmetric_relation: there is already a relation with reversed "
+            "arguments=(('head', LabeledSpan(start=61, end=62, label='PER', score=1.0)), "
+            "('tail', LabeledSpan(start=38, end=39, label='PER', score=1.0))) and label=per:is_married_with, "
+            "so we do not add the reversed relation (with label per:is_married_with) for these arguments"
+        )
+        assert (
+            caplog.messages[1]
+            == "doc.id=doc_with_symmetric_relation: there is already a relation with reversed "
+            "arguments=(('head', LabeledSpan(start=38, end=39, label='PER', score=1.0)), "
+            "('tail', LabeledSpan(start=61, end=62, label='PER', score=1.0))) and label=per:is_married_with, "
+            "so we do not add the reversed relation (with label per:is_married_with) for these arguments"
+        )
+    else:
+        assert relation_tuples == [
+            ("Entity A", "per:is_married_with", "B"),
+            ("Entity A", "per:likes", "C"),
+            ("C", "per:is_married_with", "D"),
+            ("D", "per:is_married_with", "C"),
+            ("C", "per:likes_reversed", "Entity A"),
+        ]
+        assert len(caplog.messages) == 0
 
-    assert len(encodings) == 2
-
-    # There are no relations in the first and last document, so there are also no new reversed relations
-
-    # this is the original relation
-    encoding = encodings[0]
-    assert encoding.document == documents[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "Entity A"
-    assert str(relation.tail) == "B"
-    assert relation.label == "per:employee_of"
-
-    # this is the reversed relation
-    encoding = encodings[1]
-    assert encoding.document == documents[1]
-    assert encoding.document.text == "Entity A works at B."
-    relation = encoding.metadata["candidate_annotation"]
-    assert str(relation.head) == "B"
-    assert str(relation.tail) == "Entity A"
-    assert relation.label == "per:employee_of"
+    caplog.clear()
+    document = TestDocument(
+        text="Entity A is married with B.",
+        id="doc_with_reversed_symmetric_relation",
+    )
+    document.entities.append(LabeledSpan(start=0, end=8, label="PER"))
+    document.entities.append(LabeledSpan(start=25, end=26, label="PER"))
+    document.relations.append(
+        BinaryRelation(
+            head=document.entities[1], tail=document.entities[0], label="per:is_married_with"
+        )
+    )
+    encodings = taskmodule.encode_input(document)
+    relations = [encoding.metadata["candidate_annotation"] for encoding in encodings]
+    relation_tuples = [
+        (str(relation.head), relation.label, str(relation.tail)) for relation in relations
+    ]
+    if reverse_symmetric_relations:
+        assert len(relation_tuples) == 2
+        assert relation_tuples[0] == ("B", "per:is_married_with", "Entity A")
+        assert relation_tuples[1] == ("Entity A", "per:is_married_with", "B")
+        assert len(caplog.messages) == 1
+        assert (
+            caplog.messages[0]
+            == "doc.id=doc_with_reversed_symmetric_relation: The symmetric relation with label 'per:is_married_with' "
+            "has arguments (('head', LabeledSpan(start=25, end=26, label='PER', score=1.0)), "
+            "('tail', LabeledSpan(start=0, end=8, label='PER', score=1.0))) which are not sorted by their start "
+            "and end positions. This may lead to problems during evaluation because we assume that the arguments "
+            "of symmetric relations were sorted in the beginning and, thus, interpret relations where this is not "
+            "the case as reversed. All reversed relations will get their arguments swapped during inference in "
+            "the case of add_reversed_relations=True to remove duplicates. You may consider adding reversed "
+            "versions of the *symmetric* relations on your own and then setting *reverse_symmetric_relations* "
+            "to False."
+        )
+    else:
+        assert len(relation_tuples) == 1
+        assert relation_tuples[0] == ("B", "per:is_married_with", "Entity A")
+        assert len(caplog.messages) == 0
 
 
 def test_encode_input_with_add_reversed_relations_with_wrong_relation_type(
@@ -1072,7 +1187,7 @@ def test_encode_input_with_add_reversed_relations_with_wrong_relation_type(
     )
     taskmodule.prepare([doc])
     with pytest.raises(NotImplementedError) as excinfo:
-        encodings = taskmodule.encode_input(doc)
+        taskmodule.encode_input(doc)
     assert (
         str(excinfo.value)
         == "doc.id=doc_with_nary_relations: the taskmodule does not yet support adding "
@@ -1301,9 +1416,9 @@ def test_encode_with_log_first_n_examples(caplog):
     taskmodule.prepare([doc])
 
     # we need to set the log level to INFO, otherwise the log messages are not captured
-    caplog.set_level(logging.INFO)
     with caplog.at_level(logging.INFO):
         task_encodings = taskmodule.encode([doc, doc], encode_target=True)
+
     # the second example is skipped because log_first_n_examples=1
     assert len(task_encodings) == 2
     assert len(caplog.records) == 5
@@ -1313,3 +1428,23 @@ def test_encode_with_log_first_n_examples(caplog):
     assert caplog.records[2].message == "tokens: [CLS] [H] hello [/H] [T] world [/T] [SEP]"
     assert caplog.records[3].message == "input_ids: 101 28998 19082 28996 28999 1362 28997 102"
     assert caplog.records[4].message == "Expected label: ['rel'] (ids = [1])"
+
+
+@pytest.mark.skipif(condition=not _TABULATE_AVAILABLE, reason="requires the 'tabulate' package")
+def test_encode_with_collect_statistics(documents, caplog):
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        tokenizer_name_or_path="bert-base-cased",
+        collect_statistics=True,
+    )
+    taskmodule.prepare(documents)
+    # we need to set the log level to INFO, otherwise the log messages are not captured
+    with caplog.at_level(logging.INFO):
+        task_encodings = taskmodule.encode(documents)
+    assert len(task_encodings) == 7
+
+    assert len(caplog.messages) == 1
+    expected_message = "statistics:\n"
+    expected_message += "|      |   org:founded_by |   per:employee_of |   per:founder |\n"
+    expected_message += "|:-----|-----------------:|------------------:|--------------:|\n"
+    expected_message += "| used |                2 |                 3 |             2 |"
+    assert caplog.messages[0] == expected_message
