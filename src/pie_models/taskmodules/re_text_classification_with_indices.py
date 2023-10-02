@@ -553,7 +553,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                             f"occurring relation which has the label='{prev_label}'."
                         )
                         if self.collect_statistics:
-                            skipped_relations["skipped_same_arguments"].append(rel.label)
+                            skipped_relations["skipped_same_arguments"].append(rel)
                     else:
                         arguments2relation[arguments] = rel
 
