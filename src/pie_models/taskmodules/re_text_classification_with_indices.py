@@ -329,23 +329,54 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
 
     def reset_statistics(self):
         self._statistics = defaultdict(int)
+        self._collected_relations: Dict[str, List[Annotation]] = defaultdict(list)
+
+    def collect_relation(self, kind: str, relation: Annotation):
+        if self.collect_statistics:
+            self._collected_relations[kind].append(relation)
+
+    def collect_all_relations(self, kind: str, relations: Iterable[Annotation]):
+        if self.collect_statistics:
+            self._collected_relations[kind].extend(relations)
+
+    def finalize_statistics(self):
+        if self.collect_statistics:
+            all_relations = set(self._collected_relations["available"])
+            used_relations = set(self._collected_relations["used"])
+            skipped_other = all_relations - used_relations
+            for key, rels in self._collected_relations.items():
+                rels_set = set(rels)
+                if key.startswith("skipped_"):
+                    skipped_other -= rels_set
+                elif key.startswith("used_"):
+                    pass
+                elif key in ["available", "used"]:
+                    pass
+                else:
+                    raise ValueError(f"unknown key: {key}")
+                for rel in rels_set:
+                    self.increase_counter(key=(key, rel.label))
+            for rel in skipped_other:
+                self.increase_counter(key=("skipped_other", rel.label))
 
     def show_statistics(self):
-        to_show = pd.Series(self._statistics)
-        if len(to_show.index.names) > 1:
-            to_show = to_show.unstack()
-        logger.info(f"statistics:\n{to_show.to_markdown()}")
+        if self.collect_statistics:
+            self.finalize_statistics()
+
+            to_show = pd.Series(self._statistics)
+            if len(to_show.index.names) > 1:
+                to_show = to_show.unstack()
+            logger.info(f"statistics:\n{to_show.to_markdown()}")
 
     def increase_counter(self, key: Tuple[Any, ...], value: Optional[int] = 1):
-        key_str = tuple(str(k) for k in key)
-        self._statistics[key_str] += value
+        if self.collect_statistics:
+            key_str = tuple(str(k) for k in key)
+            self._statistics[key_str] += value
 
     def encode(self, *args, **kwargs):
-        if self.collect_statistics:
-            self.reset_statistics()
+        self.reset_statistics()
         res = super().encode(*args, **kwargs)
-        if self.collect_statistics:
-            self.show_statistics()
+        self.show_statistics()
         return res
 
     def construct_argument_markers(self) -> List[str]:
@@ -494,6 +525,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         )
                         if dist > self.max_argument_distance:
                             arguments2relation.pop(arguments)
+                            self.collect_relation("skipped_argument_distance", rel)
                     else:
                         raise NotImplementedError(
                             f"doc.id={doc_id}: the taskmodule does not yet support filtering relation candidates "
@@ -512,6 +544,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
     ) -> Optional[Union[TaskEncodingType, Sequence[TaskEncodingType]]]:
         all_relations: Sequence[Annotation] = self.get_relation_layer(document)
         all_entities: Sequence[Span] = self.get_entity_layer(document)
+        self.collect_all_relations("available", all_relations)
 
         partitions: Sequence[Span]
         if self.partition_annotation is not None:
@@ -525,8 +558,6 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             # use single dummy partition
             partitions = [Span(start=0, end=len(document.text))]
 
-        used_relations: List[Annotation] = []
-        skipped_relations: Dict[str, List[Annotation]] = defaultdict(list)
         task_encodings: List[TaskEncodingType] = []
         for partition in partitions:
             # get all entities that are contained in the current partition
@@ -552,8 +583,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                             f"previous label='{prev_label}' and current label='{rel.label}'. We only keep the first "
                             f"occurring relation which has the label='{prev_label}'."
                         )
-                        if self.collect_statistics:
-                            skipped_relations["skipped_same_arguments"].append(rel)
+                        self.collect_relation("skipped_same_arguments", rel)
                     else:
                         arguments2relation[arguments] = rel
                 elif any(arg_span in entities_set for arg_span in arg_spans):
@@ -561,8 +591,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         f"doc.id={document.id}: there is a relation with label '{rel.label}' and arguments "
                         f"{arguments} that is only partially contained in the current partition. We skip this relation."
                     )
-                    if self.collect_statistics:
-                        skipped_relations["skipped_partially_contained"].append(rel)
+                    self.collect_relation("skipped_partially_contained", rel)
 
             self._add_reversed_relations(arguments2relation=arguments2relation, doc_id=document.id)
             self._add_candidate_relations(
@@ -610,8 +639,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         f"doc.id={document.id}: Skipping invalid example, cannot get argument token slices for "
                         f"{arg_spans_dict}"
                     )
-                    if self.collect_statistics:
-                        skipped_relations["skipped_args_not_aligned"].append(rel)
+                    self.collect_relation("skipped_args_not_aligned", rel)
                     continue
 
                 # ignore the typing, because we checked for None above
@@ -659,8 +687,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                     )
                     # this happens if slice_required (all arguments) does not fit into max_tokens (the available window)
                     if window_slice is None:
-                        if self.collect_statistics:
-                            skipped_relations["skipped_too_long"].append(rel)
+                        self.collect_relation("skipped_too_long", rel)
                         continue
 
                     window_start, window_end = window_slice
@@ -759,20 +786,8 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                         metadata=({"candidate_annotation": rel}),
                     )
                 )
-                if self.collect_statistics:
-                    used_relations.append(rel)
 
-        if self.collect_statistics:
-            for rel in used_relations:
-                self.increase_counter(key=("used", rel.label))
-            not_used_other = set(all_relations) - set(used_relations)
-            for key, rels in skipped_relations.items():
-                rels_set = set(rels)
-                not_used_other -= rels_set
-                for rel in rels_set:
-                    self.increase_counter(key=(key, rel.label))
-            for rel in not_used_other:
-                self.increase_counter(key=("skipped_other", rel.label))
+                self.collect_relation("used", rel)
 
         return task_encodings
 

@@ -1444,7 +1444,8 @@ def test_encode_with_collect_statistics(documents, caplog):
 
     assert len(caplog.messages) == 1
     expected_message = "statistics:\n"
-    expected_message += "|      |   org:founded_by |   per:employee_of |   per:founder |\n"
-    expected_message += "|:-----|-----------------:|------------------:|--------------:|\n"
-    expected_message += "| used |                2 |                 3 |             2 |"
+    expected_message += "|           |   org:founded_by |   per:employee_of |   per:founder |\n"
+    expected_message += "|:----------|-----------------:|------------------:|--------------:|\n"
+    expected_message += "| available |                2 |                 3 |             2 |\n"
+    expected_message += "| used      |                2 |                 3 |             2 |"
     assert caplog.messages[0] == expected_message
