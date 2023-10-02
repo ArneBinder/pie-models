@@ -556,6 +556,13 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                             skipped_relations["skipped_same_arguments"].append(rel)
                     else:
                         arguments2relation[arguments] = rel
+                elif any(arg_span in entities_set for arg_span in arg_spans):
+                    logger.warning(
+                        f"doc.id={document.id}: there is a relation with label '{rel.label}' and arguments "
+                        f"{arguments} that is only partially contained in the current partition. We skip this relation."
+                    )
+                    if self.collect_statistics:
+                        skipped_relations["skipped_partially_contained"].append(rel)
 
             self._add_reversed_relations(arguments2relation=arguments2relation, doc_id=document.id)
             self._add_candidate_relations(
@@ -760,8 +767,9 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
                 self.increase_counter(key=("used", rel.label))
             not_used_other = set(all_relations) - set(used_relations)
             for key, rels in skipped_relations.items():
-                not_used_other -= set(rels)
-                for rel in rels:
+                rels_set = set(rels)
+                not_used_other -= rels_set
+                for rel in rels_set:
                     self.increase_counter(key=(key, rel.label))
             for rel in not_used_other:
                 self.increase_counter(key=("skipped_other", rel.label))
