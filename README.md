@@ -28,9 +28,7 @@ pip install git+https://git@github.com/ArneBinder/pie-models.git
 
 ### Setup
 
-This project is build with [Poetry](https://python-poetry.org/). See here for
-[installation instructions](https://python-poetry.org/docs/#installation).
-
+0. This project is build with [Poetry](https://python-poetry.org/). See here for [installation instructions](https://python-poetry.org/docs/#installation).
 1. Get the code and switch into the project directory:
 
 ```bash
