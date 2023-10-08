@@ -8,6 +8,20 @@ version = "0.4.0"
 description = "Model and Taskmodule implementations for PyTorch-IE"
 authors = ["Arne Binder <arne.binder@dfki.de>"]
 readme = "README.md"
+homepage = "https://github.com/arnebinder/pie-models"
+repository = "https://github.com/arnebinder/pie-models"
+packages = [
+    { include = "pie_models", from = "src" },
+]
+classifiers = [
+    "Framework :: Pytest",
+    "Framework :: PyTorch-IE",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+]
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/arnebinder/pie-models/issues"
+"Changelog" = "https://github.com/arnebinder/pie-models/releases"
 
 [tool.poetry.dependencies]
 python = "^3.9"
