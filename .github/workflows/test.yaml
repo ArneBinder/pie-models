@@ -70,8 +70,7 @@ jobs:
       - name: Run tests
         run: |
           source .venv/bin/activate
-          pytest -k "not slow"
-          coverage report
+          pytest -k "not slow" --cov --cov-fail-under=90 --cov-report term-missing
       #- name: Run tests with coverage
       #  run: |
       #    pytest -k "not slow" --cov --cov-fail-under=84 --cov-report term-missing
