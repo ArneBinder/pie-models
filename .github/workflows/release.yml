@@ -4,7 +4,6 @@ on:
     push:
         branches:
             - main
-            - master
 
 jobs:
     release:
@@ -73,14 +72,3 @@ jobs:
                 user: __token__
                 password: ${{ secrets.TEST_PYPI_TOKEN }}
                 repository_url: https://test.pypi.org/legacy/
-
-          #----------------------------------------------
-          #  -----  create github release  -----
-          #----------------------------------------------
-          - name: Publish the release notes
-            uses: release-drafter/release-drafter@v5.18.1
-            with:
-                publish: ${{ steps.check-version.outputs.tag != '' }}
-                tag: ${{ steps.check-version.outputs.tag }}
-            env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
