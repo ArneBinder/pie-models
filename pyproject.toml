@@ -15,7 +15,6 @@ packages = [
 ]
 classifiers = [
     "Framework :: Pytest",
-    "Framework :: PyTorch-IE",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3 :: Only",
 ]
