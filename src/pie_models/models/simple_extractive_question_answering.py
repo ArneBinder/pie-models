@@ -1,6 +1,7 @@
 from typing import Any, Dict, MutableMapping, Optional, Tuple
 
 from pytorch_ie.core import PyTorchIEModel
+from pytorch_ie.models.interface import RequiresModelNameOrPath
 from torch import Tensor
 from torch.nn import ModuleDict, functional
 from torch.optim import Adam
@@ -8,6 +9,8 @@ from torchmetrics import F1Score
 from transformers import AutoConfig, AutoModelForQuestionAnswering, BatchEncoding
 from transformers.modeling_outputs import QuestionAnsweringModelOutput
 from typing_extensions import TypeAlias
+
+from pie_models.models.interface import RequiresMaxInputLength
 
 BatchOutput: TypeAlias = Dict[str, Any]
 
@@ -30,7 +33,9 @@ TEST = "test"
 
 
 @PyTorchIEModel.register()
-class ExtractiveQuestionAnsweringModel(PyTorchIEModel):
+class ExtractiveQuestionAnsweringModel(
+    PyTorchIEModel, RequiresModelNameOrPath, RequiresMaxInputLength
+):
     def __init__(
         self,
         model_name_or_path: str,
