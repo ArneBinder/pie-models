@@ -6,7 +6,13 @@ import numpy as np
 import torch
 from pytorch_ie import tokenize_document
 from pytorch_ie.annotations import Span
-from pytorch_ie.core import Annotation, AnnotationList, TaskEncoding, TaskModule, annotation_field
+from pytorch_ie.core import (
+    Annotation,
+    AnnotationList,
+    TaskEncoding,
+    TaskModule,
+    annotation_field,
+)
 from pytorch_ie.documents import TextBasedDocument, TokenBasedDocument
 from tokenizers import Encoding
 from transformers import AutoTokenizer, BatchEncoding, PreTrainedTokenizer
@@ -136,7 +142,6 @@ class ExtractiveQuestionAnsweringTaskModule(TaskModule):
             Sequence[TaskEncoding[DocumentType, InputEncoding, TargetEncoding]],
         ]
     ]:
-
         questions = self.get_question_layer(document)
         task_encodings: List[TaskEncodingType] = []
         for question in questions:
@@ -237,7 +242,6 @@ class ExtractiveQuestionAnsweringTaskModule(TaskModule):
         task_encoding: TaskEncoding[DocumentType, InputEncoding, TargetEncoding],
         task_output: TaskOutput,
     ) -> Iterator[Tuple[str, Annotation]]:
-
         tokenizer_encoding: Encoding = task_encoding.metadata["tokenized_document"].metadata[
             "tokenizer_encoding"
         ]
