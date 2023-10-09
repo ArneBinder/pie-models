@@ -33,7 +33,7 @@ TEST = "test"
 
 
 @PyTorchIEModel.register()
-class ExtractiveQuestionAnsweringModel(
+class SimpleExtractiveQuestionAnsweringModel(
     PyTorchIEModel, RequiresModelNameOrPath, RequiresMaxInputLength
 ):
     def __init__(
