@@ -117,10 +117,10 @@ class SimpleExtractiveQuestionAnsweringModel(
         self.log(
             f"{stage}/f1_end", f1_end, on_step=(stage == TRAINING), on_epoch=True, prog_bar=True
         )
-        # log f1 as simple average of start and end f1
-        self.log(
-            f"{stage}/f1", (f1_start + f1_end) / 2, on_step=False, on_epoch=True, prog_bar=True
-        )
+        # log f1 as simple average of start and end f1. we need to call compute() on the metric to get
+        # the actual value, otherwise lightning complains that there is no model attribute with name "f1"
+        f1_value = (f1_start.compute() + f1_end.compute()) / 2
+        self.log(f"{stage}/f1", f1_value, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def training_step(self, batch: StepBatchEncoding, batch_idx: int):
