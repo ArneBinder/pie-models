@@ -62,7 +62,7 @@ class TokenizedExtractiveQADocument(TokenBasedDocument):
     answers: AnnotationList[ExtractiveAnswer] = annotation_field(targets=["tokens", "questions"])
 
 
-DocumentType: TypeAlias = ExtractiveQADocument
+DocumentType: TypeAlias = TextBasedDocument
 InputEncoding: TypeAlias = Union[Dict[str, Any], BatchEncoding]
 
 
@@ -100,6 +100,7 @@ class ExtractiveQuestionAnsweringTaskModule(TaskModule):
         tokenizer_name_or_path: str,
         max_length: int,
         answer_annotation: str = "answers",
+        question_annotation: str = "questions",
         tokenize_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
@@ -107,32 +108,27 @@ class ExtractiveQuestionAnsweringTaskModule(TaskModule):
         self.save_hyperparameters()
 
         self.answer_annotation = answer_annotation
+        self.question_annotation = question_annotation
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
         self.max_length = max_length
         self.tokenize_kwargs = tokenize_kwargs or {}
 
     def get_answer_layer(self, document: DocumentType) -> AnnotationList[ExtractiveAnswer]:
+        # we expect that each document have an annotation layer for answers
+        # where each entry is of type ExtractiveAnswer
         return document[self.answer_annotation]
 
     def get_question_layer(self, document: DocumentType) -> AnnotationList[Question]:
         answers = self.get_answer_layer(document)
-        if len(answers._targets) != 2:
-            raise Exception(
-                f"the answers layer is expected to target exactly two layers: text and questions, but it has "
-                f"the following targets: {answers._targets}"
-            )
-        question_layer_name = answers._targets[1]
-        return document[question_layer_name]
+        # we expect that the answers annotation layer targets the questions annotation layer
+        # where each entry is of type Question
+        return answers.target_layers[self.question_annotation]
 
     def get_context(self, document: DocumentType) -> str:
         answers = self.get_answer_layer(document)
-        if len(answers._targets) != 2:
-            raise Exception(
-                f"the answers layer is expected to target exactly two layers: text and questions, but it has "
-                f"the following targets: {answers._targets}"
-            )
-        context_field_name = answers._targets[0]
-        return getattr(document, context_field_name)
+        # we expect that the answers annotation layer targets the text field
+        # which is a simple string
+        return answers.targets["text"]
 
     def encode_input(
         self,
