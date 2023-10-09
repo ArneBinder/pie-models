@@ -47,6 +47,7 @@ class SimpleExtractiveQuestionAnsweringModel(
         self.save_hyperparameters()
 
         self.learning_rate = learning_rate
+        self.max_input_length = max_input_length
 
         config = AutoConfig.from_pretrained(model_name_or_path)
         if self.is_from_pretrained:
