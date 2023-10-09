@@ -93,6 +93,8 @@ class TaskOutput:
 
 @TaskModule.register()
 class ExtractiveQuestionAnsweringTaskModule(TaskModule):
+    DOCUMENT_TYPE = ExtractiveQADocument
+
     def __init__(
         self,
         tokenizer_name_or_path: str,
