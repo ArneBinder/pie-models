@@ -62,7 +62,7 @@ class SimpleExtractiveQuestionAnsweringModel(
                 for stage in [TRAINING, VALIDATION, TEST]
             }
         )
-        self.f1_end: Dict[str, F1Score] = ModuleDict[str, F1Score](
+        self.f1_end: Dict[str, F1Score] = ModuleDict(
             {
                 f"stage_{stage}": F1Score(task="multiclass", num_classes=max_input_length)
                 for stage in [TRAINING, VALIDATION, TEST]
