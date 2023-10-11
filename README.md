@@ -14,8 +14,8 @@ Model and Taskmodule implementations for [PyTorch-IE](https://github.com/Christo
 
 Available models:
 
-- [SimpleSequenceClassificationModel](./src/pie_models/models/simple_sequence_classification_model.py)
-- [SequenceClassificationModel](./src/pie_models/models/sequence_classification_model.py)
+- [SimpleSequenceClassificationModel](./src/pie_models/models/simple_sequence_classification.py)
+- [SequenceClassificationModel](./src/pie_models/models/sequence_classification.py)
 
 Available taskmodules:
 
