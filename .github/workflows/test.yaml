@@ -73,6 +73,7 @@ jobs:
           pytest -k "not slow" --cov --cov-fail-under=90 --cov-report term-missing --cov-report xml:coverage.xml
 
       - name: Upload coverage reports to Codecov
+        if: always() #ensures that the coverage report is uploaded even if the test fails
         uses: codecov/codecov-action@v3
         with:
           files: ./coverage.xml
