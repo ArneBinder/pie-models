@@ -5,61 +5,21 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 from pytorch_ie import tokenize_document
-from pytorch_ie.annotations import Span
-from pytorch_ie.core import (
-    Annotation,
-    AnnotationList,
-    TaskEncoding,
-    TaskModule,
-    annotation_field,
-)
-from pytorch_ie.documents import TextBasedDocument, TokenBasedDocument
+from pytorch_ie.core import Annotation, AnnotationList, TaskEncoding, TaskModule
+from pytorch_ie.documents import TextBasedDocument
 from tokenizers import Encoding
 from transformers import AutoTokenizer, BatchEncoding, PreTrainedTokenizer
 from transformers.modeling_outputs import QuestionAnsweringModelOutput
 from typing_extensions import TypeAlias
 
+from pie_models.documents import (
+    ExtractiveAnswer,
+    ExtractiveQADocument,
+    Question,
+    TokenizedExtractiveQADocument,
+)
+
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass(eq=True, frozen=True)
-class Question(Annotation):
-    """A question about a context."""
-
-    text: str
-
-    def __str__(self) -> str:
-        return self.text
-
-
-@dataclasses.dataclass(eq=True, frozen=True)
-class ExtractiveAnswer(Span):
-    """An answer to a question."""
-
-    question: Question
-    score: Optional[float] = dataclasses.field(default=None, compare=False)
-
-    def __str__(self) -> str:
-        if self.targets is None:
-            return ""
-        context = self.targets[0]
-        return str(context[self.start : self.end])
-
-
-@dataclasses.dataclass
-class ExtractiveQADocument(TextBasedDocument):
-    """A PIE document with annotations for SQuAD v2.0."""
-
-    questions: AnnotationList[Question] = annotation_field()
-    answers: AnnotationList[ExtractiveAnswer] = annotation_field(targets=["text", "questions"])
-
-
-@dataclasses.dataclass
-class TokenizedExtractiveQADocument(TokenBasedDocument):
-    """A tokenized PIE document with annotations for extractive question answering."""
-
-    questions: AnnotationList[Question] = annotation_field()
-    answers: AnnotationList[ExtractiveAnswer] = annotation_field(targets=["tokens", "questions"])
 
 
 DocumentType: TypeAlias = TextBasedDocument
