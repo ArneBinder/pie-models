@@ -8,7 +8,7 @@ from transformers import BatchEncoding
 from pie_models.models import TokenClassificationModelWithSeq2SeqEncoderAndCrf
 from tests import FIXTURES_ROOT
 
-DUMP_FIXTURES = True
+DUMP_FIXTURES = False
 FIXTURES_TASKMODULE_DATA_PATH = (
     FIXTURES_ROOT / "taskmodules" / "TransformerTokenClassificationTaskModule"
 )
