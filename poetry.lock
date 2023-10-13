@@ -1216,14 +1216,25 @@ files = [
 six = ">=1.5"
 
 [[package]]
+name = "pytorch-crf"
+version = "0.7.2"
+description = "Conditional random field in PyTorch"
+optional = false
+python-versions = ">=3.6, <4"
+files = [
+    {file = "pytorch-crf-0.7.2.tar.gz", hash = "sha256:e6456e22ccfc99a3d4fe1e03e996103b1b39e9830bf3c7e12e7a9077d3be866d"},
+    {file = "pytorch_crf-0.7.2-py3-none-any.whl", hash = "sha256:1b2d7d5eea3255f6e0cac09ab8b645472e76ff70d9333bc88762cf7317a4992d"},
+]
+
+[[package]]
 name = "pytorch-ie"
-version = "0.26.0"
+version = "0.25.1"
 description = "State-of-the-art Information Extraction in PyTorch"
 optional = false
 python-versions = ">=3.9,<4.0"
 files = [
-    {file = "pytorch_ie-0.26.0-py3-none-any.whl", hash = "sha256:a6661231bed64aa882c5d2dd8391461c2fffff7aedd5af745d1207e6c9ca9513"},
-    {file = "pytorch_ie-0.26.0.tar.gz", hash = "sha256:7e1adb972e2995dcfd01943a63a1d2385e215551fa5989320c44b0a7dfc1f58d"},
+    {file = "pytorch_ie-0.25.1-py3-none-any.whl", hash = "sha256:3ddc4fc21e8a770db614d98f8789185144e1675628f05c90d4ea55c1c7345f87"},
+    {file = "pytorch_ie-0.25.1.tar.gz", hash = "sha256:5e7c8f4332ff038668ae9451faa180aca065274b0d6f39b1a619c4d392c0c750"},
 ]
 
 [package.dependencies]
@@ -1237,34 +1248,34 @@ transformers = ">=4.18,<5.0"
 
 [[package]]
 name = "pytorch-lightning"
-version = "2.0.9.post0"
+version = "2.1.0"
 description = "PyTorch Lightning is the lightweight PyTorch wrapper for ML researchers. Scale your models. Write less boilerplate."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "pytorch-lightning-2.0.9.post0.tar.gz", hash = "sha256:435b22e3b3ef7d64131bb8e3fb00bbfeb16d2fae33c78b5ee54058dee1948a26"},
-    {file = "pytorch_lightning-2.0.9.post0-py3-none-any.whl", hash = "sha256:adef569cd84053889b7bbf566be7506385170b4e82401bedfd6bcadf3aba557a"},
+    {file = "pytorch-lightning-2.1.0.tar.gz", hash = "sha256:bf9e26b293e1ccda5f8e146fe58716eecfd77e9639ef3ec2210b0dcba51c4593"},
+    {file = "pytorch_lightning-2.1.0-py3-none-any.whl", hash = "sha256:2802d683ef513235dfc211f6bc45d7086e8982feaac1625aafd2886c5e5b96f8"},
 ]
 
 [package.dependencies]
 fsspec = {version = ">2021.06.0", extras = ["http"]}
-lightning-utilities = ">=0.7.0"
+lightning-utilities = ">=0.8.0"
 numpy = ">=1.17.2"
-packaging = ">=17.1"
+packaging = ">=20.0"
 PyYAML = ">=5.4"
-torch = ">=1.11.0"
+torch = ">=1.12.0"
 torchmetrics = ">=0.7.0"
 tqdm = ">=4.57.0"
 typing-extensions = ">=4.0.0"
 
 [package.extras]
-all = ["deepspeed (>=0.8.2)", "gym[classic-control] (>=0.17.0)", "hydra-core (>=1.0.5)", "ipython[all] (<8.15.0)", "jsonargparse[signatures] (>=4.18.0,<4.25.0)", "lightning-utilities (>=0.7.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "rich (>=12.3.0)", "tensorboardX (>=2.2)", "torchmetrics (>=0.10.0)", "torchvision (>=0.12.0)"]
-deepspeed = ["deepspeed (>=0.8.2)"]
-dev = ["cloudpickle (>=1.3)", "coverage (==7.3.0)", "deepspeed (>=0.8.2)", "fastapi (<0.100.0)", "gym[classic-control] (>=0.17.0)", "hydra-core (>=1.0.5)", "ipython[all] (<8.15.0)", "jsonargparse[signatures] (>=4.18.0,<4.25.0)", "lightning-utilities (>=0.7.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "onnx (<1.15.0)", "onnxruntime (<1.16.0)", "pandas (>1.0)", "protobuf (<3.21.0)", "psutil (<5.9.6)", "pytest (==7.4.0)", "pytest-cov (==4.1.0)", "pytest-forked (==1.4.0)", "pytest-rerunfailures (==10.3)", "rich (>=12.3.0)", "scikit-learn (>0.22.1)", "tensorboard (>=2.9.1)", "tensorboardX (>=2.2)", "torchmetrics (>=0.10.0)", "torchvision (>=0.12.0)", "uvicorn (<0.23.3)"]
-examples = ["gym[classic-control] (>=0.17.0)", "ipython[all] (<8.15.0)", "lightning-utilities (>=0.7.0)", "torchmetrics (>=0.10.0)", "torchvision (>=0.12.0)"]
-extra = ["hydra-core (>=1.0.5)", "jsonargparse[signatures] (>=4.18.0,<4.25.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "rich (>=12.3.0)", "tensorboardX (>=2.2)"]
-strategies = ["deepspeed (>=0.8.2)"]
-test = ["cloudpickle (>=1.3)", "coverage (==7.3.0)", "fastapi (<0.100.0)", "onnx (<1.15.0)", "onnxruntime (<1.16.0)", "pandas (>1.0)", "protobuf (<3.21.0)", "psutil (<5.9.6)", "pytest (==7.4.0)", "pytest-cov (==4.1.0)", "pytest-forked (==1.4.0)", "pytest-rerunfailures (==10.3)", "scikit-learn (>0.22.1)", "tensorboard (>=2.9.1)", "uvicorn (<0.23.3)"]
+all = ["deepspeed (>=0.8.2,<=0.9.3)", "gym[classic-control] (>=0.17.0)", "hydra-core (>=1.0.5)", "ipython[all] (<8.15.0)", "jsonargparse[signatures] (>=4.18.0)", "lightning-utilities (>=0.8.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "rich (>=12.3.0)", "tensorboardX (>=2.2)", "torchmetrics (>=0.10.0)", "torchvision (>=0.13.0)"]
+deepspeed = ["deepspeed (>=0.8.2,<=0.9.3)"]
+dev = ["cloudpickle (>=1.3)", "coverage (==7.3.1)", "deepspeed (>=0.8.2,<=0.9.3)", "fastapi", "gym[classic-control] (>=0.17.0)", "hydra-core (>=1.0.5)", "ipython[all] (<8.15.0)", "jsonargparse[signatures] (>=4.18.0)", "lightning-utilities (>=0.8.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "onnx (>=0.14.0)", "onnxruntime (>=0.15.0)", "pandas (>1.0)", "psutil (<5.9.6)", "pytest (==7.4.0)", "pytest-cov (==4.1.0)", "pytest-random-order (==1.1.0)", "pytest-rerunfailures (==12.0)", "pytest-timeout (==2.1.0)", "rich (>=12.3.0)", "scikit-learn (>0.22.1)", "tensorboard (>=2.9.1)", "tensorboardX (>=2.2)", "torchmetrics (>=0.10.0)", "torchvision (>=0.13.0)", "uvicorn"]
+examples = ["gym[classic-control] (>=0.17.0)", "ipython[all] (<8.15.0)", "lightning-utilities (>=0.8.0)", "torchmetrics (>=0.10.0)", "torchvision (>=0.13.0)"]
+extra = ["hydra-core (>=1.0.5)", "jsonargparse[signatures] (>=4.18.0)", "matplotlib (>3.1)", "omegaconf (>=2.0.5)", "rich (>=12.3.0)", "tensorboardX (>=2.2)"]
+strategies = ["deepspeed (>=0.8.2,<=0.9.3)"]
+test = ["cloudpickle (>=1.3)", "coverage (==7.3.1)", "fastapi", "onnx (>=0.14.0)", "onnxruntime (>=0.15.0)", "pandas (>1.0)", "psutil (<5.9.6)", "pytest (==7.4.0)", "pytest-cov (==4.1.0)", "pytest-random-order (==1.1.0)", "pytest-rerunfailures (==12.0)", "pytest-timeout (==2.1.0)", "scikit-learn (>0.22.1)", "tensorboard (>=2.9.1)", "uvicorn"]
 
 [[package]]
 name = "pytz"
@@ -2157,4 +2168,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "f803e7777c6f0a3dddcbe403d60851c106420da3889a2f99f64ed39a658e12b5"
+content-hash = "8a101357a804a0532a027481e88d2f563843f813ca6534dd1bb106305e40a881"
