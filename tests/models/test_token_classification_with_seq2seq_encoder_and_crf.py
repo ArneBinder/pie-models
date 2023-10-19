@@ -2,8 +2,9 @@ import json
 
 import pytest
 import torch
+import transformers
 from pytorch_ie.taskmodules import TransformerTokenClassificationTaskModule
-from transformers import BatchEncoding
+from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 
 from pie_models.models import TokenClassificationModelWithSeq2SeqEncoderAndCrf
 from tests import FIXTURES_ROOT
@@ -39,7 +40,6 @@ def test_dump_fixtures(documents):
     converted_batch_encoding = {
         "inputs": inputs,
         "targets": targets,
-        "num_classes": len(taskmodule.label_to_id),
     }
     with open(filepath, "w") as f:
         json.dump(converted_batch_encoding, f)
@@ -51,55 +51,208 @@ def batch(documents):
     filepath = FIXTURES_TASKMODULE_DATA_PATH / "batch_encoding_inputs.json"
     with open(filepath) as f:
         batch_encoding = json.load(f)
-    inputs = BatchEncoding(batch_encoding["inputs"], tensor_type="pt")
-    targets = torch.Tensor(batch_encoding["targets"])
-    num_classes = batch_encoding["num_classes"]
-    return (inputs, targets, num_classes)
+    inputs = {
+        "input_ids": torch.LongTensor(batch_encoding["inputs"]["input_ids"]),
+        "token_type_ids": torch.LongTensor(batch_encoding["inputs"]["token_type_ids"]),
+        "attention_mask": torch.LongTensor(batch_encoding["inputs"]["attention_mask"]),
+    }
+    targets = torch.LongTensor(batch_encoding["targets"])
+    return (inputs, targets)
 
 
-def get_model(batch):
-    _, _, num_classes = batch
-    model = TokenClassificationModelWithSeq2SeqEncoderAndCrf(
-        model_name_or_path="bert-base-cased",
-        num_classes=num_classes,
-        # warmup_proportion would need a trainer
-        warmup_proportion=0.0,
+def get_model(
+    monkeypatch,
+    model_type,
+    num_classes,
+    batch_size,
+    seq_len,
+    add_dummy_linear=False,
+    **model_kwargs,
+):
+    class MockConfig:
+        def __init__(
+            self,
+            hidden_size: int = 10,
+            classifier_dropout: float = 0.1,
+            model_type=model_type,
+        ) -> None:
+            self.hidden_size = hidden_size
+            self.model_type = model_type
+            if self.model_type == "bert":
+                self.hidden_dropout_prob = classifier_dropout
+            elif self.model_type == "albert":
+                self.classifier_dropout_prob = classifier_dropout
+            elif self.model_type == "distilbert":
+                self.seq_classif_dropout = classifier_dropout
+            elif self.model_type == "longformer":
+                self.hidden_dropout_prob = classifier_dropout
+            else:
+                self.classifier_dropout = classifier_dropout
+
+    class MockModel(torch.nn.Module):
+        def __init__(self, batch_size, seq_len, hidden_size, add_dummy_linear) -> None:
+            super().__init__()
+            self.batch_size = batch_size
+            self.seq_len = seq_len
+            self.hidden_size = hidden_size
+            if add_dummy_linear:
+                self.dummy_linear = torch.nn.Linear(self.hidden_size, 99)
+
+        def __call__(self, *args, **kwargs):
+            last_hidden_state = torch.FloatTensor(
+                torch.rand(self.batch_size, self.seq_len, self.hidden_size)
+            )
+            return BaseModelOutputWithPoolingAndCrossAttentions(
+                last_hidden_state=last_hidden_state,
+            )
+
+    hidden_size = 10
+
+    monkeypatch.setattr(
+        transformers.AutoConfig,
+        "from_pretrained",
+        lambda model_name_or_path: MockConfig(
+            hidden_size=hidden_size, classifier_dropout=0.1, model_type=model_type
+        ),
     )
+    monkeypatch.setattr(
+        transformers.AutoModel,
+        "from_pretrained",
+        lambda model_name_or_path, config: MockModel(
+            batch_size=batch_size,
+            seq_len=seq_len,
+            hidden_size=hidden_size,
+            add_dummy_linear=add_dummy_linear,
+        ),
+    )
+
+    # set seed to make the classifier deterministic
+    torch.manual_seed(42)
+    result = TokenClassificationModelWithSeq2SeqEncoderAndCrf(
+        model_name_or_path="bert",
+        num_classes=num_classes,
+        warmup_proportion=0.0,
+        **model_kwargs,
+    )
+    assert not result.is_from_pretrained
+
+    return result
+
+
+@pytest.fixture
+def model(monkeypatch, batch):
+    inputs, targets = batch
+    model = get_model(
+        monkeypatch=monkeypatch,
+        model_type="bert",
+        batch_size=inputs["input_ids"].shape[0],
+        seq_len=inputs["input_ids"].shape[1],
+        num_classes=int(torch.max(targets) + 1),
+    )
+    # model = TokenClassificationModelWithSeq2SeqEncoderAndCrf(
+    #     model_name_or_path="bert-base-uncased",
+    #     num_classes=5,
+    # )
     return model
 
 
-def test_get_model(batch):
-    model = get_model(batch)
+@pytest.mark.parametrize("model_type", ["bert", "albert", "distilbert", "longformer"])
+def test_config_model_classifier_dropout(monkeypatch, model_type):
+    model = get_model(
+        monkeypatch=monkeypatch,
+        model_type=model_type,
+        batch_size=4,
+        seq_len=10,
+        num_classes=5,
+    )
     assert model is not None
 
 
-def test_forward(batch):
-    inputs, targets, _ = batch
+def test_freeze_base_model(monkeypatch, batch):
+    inputs, target = batch
+    # set seed to make the classifier deterministic
+    model = get_model(
+        monkeypatch,
+        model_type="bert",
+        batch_size=4,
+        seq_len=10,
+        num_classes=5,
+        add_dummy_linear=True,
+        freeze_base_model=True,
+    )
+    base_model_params = list(model.model.parameters())
+    # the dummy linear from the mock base model has 2 parameters
+    assert len(base_model_params) == 2
+    for param in base_model_params:
+        assert not param.requires_grad
+
+
+def test_forward(batch, model):
+    inputs, targets = batch
     batch_size, seq_len = inputs["input_ids"].shape
-    model = get_model(batch)
+    num_classes = int(torch.max(targets) + 1)
+
     # set seed to make sure the output is deterministic
     torch.manual_seed(42)
     output = model.forward(inputs)
     assert set(output) == {"logits"}
     logits = output["logits"]
-    assert logits.shape == (batch_size, seq_len, model.num_classes)
+    assert logits.shape == (batch_size, seq_len, num_classes)
 
 
-# def test_step():
-#     pass
-#
-#
-# def test_training_step():
-#     pass
-#
-#
-# def test_validation_step():
-#     pass
-#
-#
-# def test_test_step():
-#     pass
-#
-#
-# def test_configure_optimizers():
-#     pass
+def test_step(batch, model):
+    torch.manual_seed(42)
+    loss = model.step("train", batch)
+    assert loss is not None
+
+
+def test_training_step(batch, model):
+    loss = model.training_step(batch, batch_idx=0)
+    assert loss is not None
+
+
+def test_validation_step(batch, model):
+    loss = model.validation_step(batch, batch_idx=0)
+    assert loss is not None
+
+
+def test_test_step(batch, model):
+    loss = model.test_step(batch, batch_idx=0)
+    assert loss is not None
+
+
+def test_configure_optimizers(model):
+    optimizer = model.configure_optimizers()
+    assert optimizer is not None
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.defaults["lr"] == 1e-05
+    assert optimizer.defaults["weight_decay"] == 0.01
+    assert optimizer.defaults["eps"] == 1e-08
+
+
+def test_configure_optimizers_with_task_learning_rate(monkeypatch):
+    model = get_model(
+        monkeypatch=monkeypatch,
+        model_type="bert",
+        batch_size=4,
+        seq_len=10,
+        num_classes=5,
+        add_dummy_linear=True,
+        task_learning_rate=0.1,
+    )
+    optimizer = model.configure_optimizers()
+    assert optimizer is not None
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert len(optimizer.param_groups) == 2
+    param_group = optimizer.param_groups[0]
+    assert param_group["lr"] == 1e-05
+    # the dummy linear from the mock base model has 2 parameters
+    assert len(param_group["params"]) == 2
+    assert param_group["params"][0].shape == torch.Size([99, 10])
+    assert param_group["params"][1].shape == torch.Size([99])
+    param_group = optimizer.param_groups[1]
+    assert param_group["lr"] == 0.1
+    # the classifier head has 5 parameters
+    assert len(param_group["params"]) == 5
+    assert param_group["params"][0].shape == torch.Size([5, 10])
+    assert param_group["params"][1].shape == torch.Size([5])
