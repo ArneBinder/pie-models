@@ -43,8 +43,8 @@ from pytorch_ie.core import (
 )
 from pytorch_ie.documents import (
     TextDocument,
-    TextDocumentWithLabeledEntitiesAndRelations,
-    TextDocumentWithLabeledEntitiesRelationsAndLabeledPartitions,
+    TextDocumentWithLabeledSpansAndBinaryRelations,
+    TextDocumentWithLabeledSpansBinaryRelationsAndLabeledPartitions,
 )
 from pytorch_ie.taskmodules.interface import ChangesTokenizerVocabSize
 from pytorch_ie.utils.span import get_token_slice, has_overlap, is_contained_in
@@ -286,9 +286,9 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
     @property
     def document_type(self) -> Optional[Type[DocumentType]]:
         if self.partition_annotation is not None:
-            return TextDocumentWithLabeledEntitiesRelationsAndLabeledPartitions
+            return TextDocumentWithLabeledSpansBinaryRelationsAndLabeledPartitions
         else:
-            return TextDocumentWithLabeledEntitiesAndRelations
+            return TextDocumentWithLabeledSpansAndBinaryRelations
 
     def get_relation_layer(self, document: Document) -> AnnotationList[BinaryRelation]:
         return document[self.relation_annotation]
