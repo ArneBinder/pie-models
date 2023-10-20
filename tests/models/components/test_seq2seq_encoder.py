@@ -23,7 +23,7 @@ def test_no_encoder():
     assert len(encoder) == 0
 
 
-@pytest.mark.parametrize("seq2seq_enc_type", ["lstm", "gru", "rnn"])
+@pytest.mark.parametrize("seq2seq_enc_type", list(RNN_TYPE2CLASS))
 def test_rnn_encoder(seq2seq_enc_type):
     seq2seq_dict = {
         "type": "sequential",
