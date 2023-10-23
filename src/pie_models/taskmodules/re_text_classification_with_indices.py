@@ -210,7 +210,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
     def __init__(
         self,
         tokenizer_name_or_path: str,
-        relation_annotation: str = "relations",
+        relation_annotation: str = "binary_relations",
         add_candidate_relations: bool = False,
         add_reversed_relations: bool = False,
         partition_annotation: Optional[str] = None,
