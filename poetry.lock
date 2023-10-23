@@ -1217,13 +1217,13 @@ six = ">=1.5"
 
 [[package]]
 name = "pytorch-ie"
-version = "0.25.2.dev1698054863"
+version = "0.26.0"
 description = "State-of-the-art Information Extraction in PyTorch"
 optional = false
 python-versions = ">=3.9,<4.0"
 files = [
-    {file = "pytorch_ie-0.25.2.dev1698054863-py3-none-any.whl", hash = "sha256:72476336c7c26cde2a0f3694fe0a78b72e2833a8406fb4e4a6d4381bf8834371"},
-    {file = "pytorch_ie-0.25.2.dev1698054863.tar.gz", hash = "sha256:be9d6d28bc52f636790fd0725df89122555db37a79803e42080b9f0663753b35"},
+    {file = "pytorch_ie-0.26.0-py3-none-any.whl", hash = "sha256:a6661231bed64aa882c5d2dd8391461c2fffff7aedd5af745d1207e6c9ca9513"},
+    {file = "pytorch_ie-0.26.0.tar.gz", hash = "sha256:7e1adb972e2995dcfd01943a63a1d2385e215551fa5989320c44b0a7dfc1f58d"},
 ]
 
 [package.dependencies]
@@ -1234,11 +1234,6 @@ pytorch-lightning = ">=2,<3"
 torch = ">=1.10"
 torchmetrics = ">=1,<2"
 transformers = ">=4.18,<5.0"
-
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "pre-release"
 
 [[package]]
 name = "pytorch-lightning"
@@ -2162,4 +2157,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "e67224147a3963874f5842808c676cf08717b78f831eef01bbd943643584246b"
+content-hash = "f803e7777c6f0a3dddcbe403d60851c106420da3889a2f99f64ed39a658e12b5"
