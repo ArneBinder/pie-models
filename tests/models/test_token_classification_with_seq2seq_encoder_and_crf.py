@@ -26,6 +26,7 @@ def documents(dataset):
 def test_dump_fixtures(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = TransformerTokenClassificationTaskModule(
+        entity_annotation="entities",
         tokenizer_name_or_path=tokenizer_name_or_path,
     )
     taskmodule.prepare(documents)
