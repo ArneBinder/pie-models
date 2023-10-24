@@ -6,12 +6,15 @@ import transformers
 from pytorch_ie.taskmodules import TransformerTokenClassificationTaskModule
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 
-from pie_models.models import TokenClassificationModelWithSeq2SeqEncoderAndCrf
+from pie_models.models.token_classification_with_seq2seq_encoder_and_crf import (
+    HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE,
+    TokenClassificationModelWithSeq2SeqEncoderAndCrf,
+)
 from tests import FIXTURES_ROOT
 
 DUMP_FIXTURES = False
 FIXTURES_TASKMODULE_DATA_PATH = (
-    FIXTURES_ROOT / "taskmodules" / "TransformerTokenClassificationTaskModule"
+    FIXTURES_ROOT / "taskmodules" / "token_classification_with_seq2seq_encoder_and_crf"
 )
 
 
@@ -79,16 +82,10 @@ def get_model(
         ) -> None:
             self.hidden_size = hidden_size
             self.model_type = model_type
-            if self.model_type == "bert":
-                self.hidden_dropout_prob = classifier_dropout
-            elif self.model_type == "albert":
-                self.classifier_dropout_prob = classifier_dropout
-            elif self.model_type == "distilbert":
-                self.seq_classif_dropout = classifier_dropout
-            elif self.model_type == "longformer":
-                self.hidden_dropout_prob = classifier_dropout
-            else:
-                self.classifier_dropout = classifier_dropout
+            classifier_dropout_attr = HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE.get(
+                model_type, "classifier_dropout"
+            )
+            setattr(self, classifier_dropout_attr, classifier_dropout)
 
     class MockModel(torch.nn.Module):
         def __init__(self, batch_size, seq_len, hidden_size, add_dummy_linear) -> None:
@@ -150,10 +147,6 @@ def model(monkeypatch, batch):
         seq_len=inputs["input_ids"].shape[1],
         num_classes=int(torch.max(targets) + 1),
     )
-    # model = TokenClassificationModelWithSeq2SeqEncoderAndCrf(
-    #     model_name_or_path="bert-base-uncased",
-    #     num_classes=5,
-    # )
     return model
 
 
@@ -166,7 +159,9 @@ def test_config_model_classifier_dropout(monkeypatch, model_type):
         seq_len=10,
         num_classes=5,
     )
+
     assert model is not None
+    assert isinstance(model, TokenClassificationModelWithSeq2SeqEncoderAndCrf)
 
 
 def test_freeze_base_model(monkeypatch, batch):
@@ -188,6 +183,25 @@ def test_freeze_base_model(monkeypatch, batch):
         assert not param.requires_grad
 
 
+def test_tune_base_model(monkeypatch, batch):
+    inputs, target = batch
+    # set seed to make the classifier deterministic
+    model = get_model(
+        monkeypatch,
+        model_type="bert",
+        batch_size=4,
+        seq_len=10,
+        num_classes=5,
+        add_dummy_linear=True,
+        freeze_base_model=False,
+    )
+    base_model_params = list(model.model.parameters())
+    # the dummy linear from the mock base model has 2 parameters
+    assert len(base_model_params) == 2
+    for param in base_model_params:
+        assert param.requires_grad
+
+
 def test_forward(batch, model):
     inputs, targets = batch
     batch_size, seq_len = inputs["input_ids"].shape
@@ -199,12 +213,76 @@ def test_forward(batch, model):
     assert set(output) == {"logits"}
     logits = output["logits"]
     assert logits.shape == (batch_size, seq_len, num_classes)
+    assert_logits = torch.tensor(
+        [
+            [
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ],
+        ]
+    )
+
+    torch.testing.assert_close(logits.data, assert_logits)
 
 
 def test_step(batch, model):
     torch.manual_seed(42)
     loss = model.step("train", batch)
+    assert_loss = torch.tensor(57.9808)
     assert loss is not None
+    torch.testing.assert_close(loss, assert_loss)
 
 
 def test_training_step(batch, model):
