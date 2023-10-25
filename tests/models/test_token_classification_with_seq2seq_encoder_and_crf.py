@@ -213,7 +213,7 @@ def test_forward(batch, model):
     assert set(output) == {"logits"}
     logits = output["logits"]
     assert logits.shape == (batch_size, seq_len, num_classes)
-    assert_logits = torch.tensor(
+    expected_logits = torch.tensor(
         [
             [
                 [1.0, 0.0, 0.0, 0.0, 0.0],
@@ -274,30 +274,32 @@ def test_forward(batch, model):
         ]
     )
 
-    torch.testing.assert_close(logits.data, assert_logits)
+    torch.testing.assert_close(logits, expected_logits)
 
 
 def test_step(batch, model):
     torch.manual_seed(42)
     loss = model.step("train", batch)
-    assert_loss = torch.tensor(57.9808)
     assert loss is not None
-    torch.testing.assert_close(loss, assert_loss)
+    torch.testing.assert_close(loss, torch.tensor(57.9808))
 
 
 def test_training_step(batch, model):
     loss = model.training_step(batch, batch_idx=0)
     assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(59.2053))
 
 
 def test_validation_step(batch, model):
     loss = model.validation_step(batch, batch_idx=0)
     assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(59.2053))
 
 
 def test_test_step(batch, model):
     loss = model.test_step(batch, batch_idx=0)
     assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(59.2053))
 
 
 def test_configure_optimizers(model):

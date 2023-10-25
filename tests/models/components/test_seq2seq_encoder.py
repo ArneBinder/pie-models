@@ -24,29 +24,21 @@ def test_no_encoder():
 
 
 @pytest.mark.parametrize("seq2seq_enc_type", list(RNN_TYPE2CLASS))
-def test_rnn_encoder(seq2seq_enc_type):
+@pytest.mark.parametrize("bidirectional", [True, False])
+def test_rnn_encoder(seq2seq_enc_type, bidirectional):
     seq2seq_dict = {
         "type": seq2seq_enc_type,
         "hidden_size": 10,
+        "bidirectional": bidirectional,
     }
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
     assert isinstance(encoder.rnn, type(RNN_TYPE2CLASS[seq2seq_enc_type](10, 10)))
 
-
-@pytest.mark.parametrize("bidirectional", [True, False])
-def test_output_size(bidirectional):
-    seq2seq_dict = {
-        "type": "lstm",
-        "bidirectional": bidirectional,
-        "hidden_size": 10,
-    }
-
-    input_size = 10
-    assert_output_size = input_size * 2 if bidirectional else input_size
-    _, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
+    expected_output_size = input_size * 2 if bidirectional else input_size
     assert output_size is not None
-    assert output_size == assert_output_size
+    assert output_size == expected_output_size
 
 
 @pytest.mark.parametrize("activation_type", list(ACTIVATION_TYPE2CLASS))
@@ -66,7 +58,7 @@ def test_dropout():
     }
     encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
     assert encoder is not None
-    assert encoder._get_name() == torch.nn.Dropout(p=0.5)._get_name()
+    assert isinstance(encoder, type(torch.nn.Dropout()))
 
 
 def test_linear():
@@ -77,12 +69,13 @@ def test_linear():
 
     encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
     assert encoder is not None
-    assert encoder._get_name() == torch.nn.Linear(10, 10)._get_name()
+    assert isinstance(encoder, type(torch.nn.Linear(10, 10)))
 
 
 def test_unknown_rnn_type():
     seq2seq_dict = {
         "type": "unknown",
     }
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as e:
         build_seq2seq_encoder(seq2seq_dict, 10)
+        assert e == "Unknown seq2seq_encoder_type: unknown"
