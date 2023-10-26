@@ -236,11 +236,11 @@ def test_freeze_base_model(monkeypatch):
     assert len(base_model_params) > 0
     for param in base_model_params.values():
         assert not param.requires_grad
-    head_params = {
+    task_params = {
         name: param for name, param in model.named_parameters() if name not in base_model_params
     }
-    assert len(head_params) > 0
-    for param in head_params.values():
+    assert len(task_params) > 0
+    for param in task_params.values():
         assert param.requires_grad
 
 
@@ -258,11 +258,11 @@ def test_tune_base_model(monkeypatch):
     assert len(base_model_params) > 0
     for param in base_model_params.values():
         assert param.requires_grad
-    head_params = {
+    task_params = {
         name: param for name, param in model.named_parameters() if name not in base_model_params
     }
-    assert len(head_params) > 0
-    for param in head_params.values():
+    assert len(task_params) > 0
+    for param in task_params.values():
         assert param.requires_grad
 
 
