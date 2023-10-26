@@ -34,7 +34,7 @@ def test_rnn_encoder(seq2seq_enc_type, bidirectional):
     input_size = 10
     encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
-    assert isinstance(encoder.rnn, type(RNN_TYPE2CLASS[seq2seq_enc_type](10, 10)))
+    assert isinstance(encoder.rnn, RNN_TYPE2CLASS[seq2seq_enc_type])
 
     expected_output_size = input_size * 2 if bidirectional else input_size
     assert output_size is not None
@@ -46,9 +46,11 @@ def test_activations(activation_type):
     seq2seq_dict = {
         "type": activation_type,
     }
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
-    assert isinstance(encoder, type(ACTIVATION_TYPE2CLASS[activation_type]()))
+    assert isinstance(encoder, ACTIVATION_TYPE2CLASS[activation_type])
+    assert output_size == input_size
 
 
 def test_dropout():
@@ -56,9 +58,11 @@ def test_dropout():
         "type": "dropout",
         "p": 0.5,
     }
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
-    assert isinstance(encoder, type(torch.nn.Dropout()))
+    assert isinstance(encoder, torch.nn.Dropout)
+    assert output_size == input_size
 
 
 def test_linear():
@@ -67,15 +71,17 @@ def test_linear():
         "out_features": 10,
     }
 
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
-    assert isinstance(encoder, type(torch.nn.Linear(10, 10)))
+    assert isinstance(encoder, torch.nn.Linear)
+    assert output_size == input_size
 
 
 def test_unknown_rnn_type():
     seq2seq_dict = {
         "type": "unknown",
     }
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError) as exc_info:
         build_seq2seq_encoder(seq2seq_dict, 10)
-        assert e == "Unknown seq2seq_encoder_type: unknown"
+    assert str(exc_info.value) == "Unknown seq2seq_encoder_type: unknown"
