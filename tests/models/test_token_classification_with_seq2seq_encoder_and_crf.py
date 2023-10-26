@@ -222,9 +222,7 @@ def test_seq2seq_classification_head(monkeypatch, seq2seq_enc_type):
     assert isinstance(model.seq2seq_encoder.rnn, RNN_TYPE2CLASS[seq2seq_enc_type])
 
 
-def test_freeze_base_model(monkeypatch, batch):
-    inputs, target = batch
-    # set seed to make the classifier deterministic
+def test_freeze_base_model(monkeypatch):
     model = get_model(
         monkeypatch,
         model_type="bert",
@@ -234,20 +232,19 @@ def test_freeze_base_model(monkeypatch, batch):
         add_dummy_linear=True,
         freeze_base_model=True,
     )
-    base_model_params = list(model.model.parameters())
-    # the dummy linear from the mock base model has 2 parameters
-    assert len(base_model_params) == 2
-    for param in base_model_params:
+    base_model_params = dict(model.model.named_parameters(prefix="model"))
+    assert len(base_model_params) > 0
+    for param in base_model_params.values():
         assert not param.requires_grad
-
-    classification_head_params = list(model.parameters())[2:]
-    for param in classification_head_params:
+    head_params = {
+        name: param for name, param in model.named_parameters() if name not in base_model_params
+    }
+    assert len(head_params) > 0
+    for param in head_params.values():
         assert param.requires_grad
 
 
-def test_tune_base_model(monkeypatch, batch):
-    inputs, target = batch
-    # set seed to make the classifier deterministic
+def test_tune_base_model(monkeypatch):
     model = get_model(
         monkeypatch,
         model_type="bert",
@@ -257,14 +254,15 @@ def test_tune_base_model(monkeypatch, batch):
         add_dummy_linear=True,
         freeze_base_model=False,
     )
-    base_model_params = list(model.model.parameters())
-    # the dummy linear from the mock base model has 2 parameters
-    assert len(base_model_params) == 2
-    for param in base_model_params:
+    base_model_params = dict(model.model.named_parameters(prefix="model"))
+    assert len(base_model_params) > 0
+    for param in base_model_params.values():
         assert param.requires_grad
-
-    classification_head_params = list(model.parameters())[2:]
-    for param in classification_head_params:
+    head_params = {
+        name: param for name, param in model.named_parameters() if name not in base_model_params
+    }
+    assert len(head_params) > 0
+    for param in head_params.values():
         assert param.requires_grad
 
 

@@ -10,8 +10,10 @@ from pie_models.models.components.seq2seq_encoder import (
 
 def test_no_encoder():
     seq2seq_dict = {}
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is None
+    assert output_size == input_size
 
     seq2seq_dict = {
         "type": "sequential",
@@ -19,16 +21,19 @@ def test_no_encoder():
             "type": "none",
         },
     }
-    encoder, _ = build_seq2seq_encoder(seq2seq_dict, 10)
+    input_size = 10
+    encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert len(encoder) == 0
+    assert output_size == input_size
 
 
 @pytest.mark.parametrize("seq2seq_enc_type", list(RNN_TYPE2CLASS))
 @pytest.mark.parametrize("bidirectional", [True, False])
 def test_rnn_encoder(seq2seq_enc_type, bidirectional):
+    hidden_size = 99
     seq2seq_dict = {
         "type": seq2seq_enc_type,
-        "hidden_size": 10,
+        "hidden_size": hidden_size,
         "bidirectional": bidirectional,
     }
     input_size = 10
@@ -36,7 +41,7 @@ def test_rnn_encoder(seq2seq_enc_type, bidirectional):
     assert encoder is not None
     assert isinstance(encoder.rnn, RNN_TYPE2CLASS[seq2seq_enc_type])
 
-    expected_output_size = input_size * 2 if bidirectional else input_size
+    expected_output_size = hidden_size * 2 if bidirectional else hidden_size
     assert output_size is not None
     assert output_size == expected_output_size
 
@@ -66,16 +71,17 @@ def test_dropout():
 
 
 def test_linear():
+    out_features = 99
     seq2seq_dict = {
         "type": "linear",
-        "out_features": 10,
+        "out_features": out_features,
     }
 
     input_size = 10
     encoder, output_size = build_seq2seq_encoder(seq2seq_dict, input_size)
     assert encoder is not None
     assert isinstance(encoder, torch.nn.Linear)
-    assert output_size == input_size
+    assert output_size == out_features
 
 
 def test_unknown_rnn_type():
