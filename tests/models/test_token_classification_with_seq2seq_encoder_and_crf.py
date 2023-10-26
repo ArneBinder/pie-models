@@ -182,6 +182,10 @@ def test_freeze_base_model(monkeypatch, batch):
     for param in base_model_params:
         assert not param.requires_grad
 
+    classification_head_params = list(model.parameters())[2:]
+    for param in classification_head_params:
+        assert param.requires_grad
+
 
 def test_tune_base_model(monkeypatch, batch):
     inputs, target = batch
@@ -199,6 +203,10 @@ def test_tune_base_model(monkeypatch, batch):
     # the dummy linear from the mock base model has 2 parameters
     assert len(base_model_params) == 2
     for param in base_model_params:
+        assert param.requires_grad
+
+    classification_head_params = list(model.parameters())[2:]
+    for param in classification_head_params:
         assert param.requires_grad
 
 
