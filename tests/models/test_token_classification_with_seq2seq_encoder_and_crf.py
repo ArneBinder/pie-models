@@ -6,6 +6,7 @@ import transformers
 from pytorch_ie.taskmodules import TransformerTokenClassificationTaskModule
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 
+from pie_models.models.components.seq2seq_encoder import RNN_TYPE2CLASS
 from pie_models.models.token_classification_with_seq2seq_encoder_and_crf import (
     HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE,
     TokenClassificationModelWithSeq2SeqEncoderAndCrf,
@@ -83,9 +84,10 @@ def get_model(
             self.hidden_size = hidden_size
             self.model_type = model_type
             classifier_dropout_attr = HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE.get(
-                model_type, "classifier_dropout"
+                model_type, None
             )
-            setattr(self, classifier_dropout_attr, classifier_dropout)
+            if classifier_dropout_attr is not None:
+                setattr(self, classifier_dropout_attr, classifier_dropout)
 
     class MockModel(torch.nn.Module):
         def __init__(self, batch_size, seq_len, hidden_size, add_dummy_linear) -> None:
@@ -140,28 +142,84 @@ def get_model(
 @pytest.fixture
 def model(monkeypatch, batch):
     inputs, targets = batch
+    seq2seq_dict = {
+        "type": "linear",
+        "out_features": 10,
+    }
     model = get_model(
         monkeypatch=monkeypatch,
         model_type="bert",
         batch_size=inputs["input_ids"].shape[0],
         seq_len=inputs["input_ids"].shape[1],
         num_classes=int(torch.max(targets) + 1),
+        seq2seq_encoder=seq2seq_dict,
     )
     return model
 
 
-@pytest.mark.parametrize("model_type", ["bert", "albert", "distilbert", "longformer"])
-def test_config_model_classifier_dropout(monkeypatch, model_type):
+@pytest.fixture
+def model_with_ce(monkeypatch, batch):
+    inputs, targets = batch
+    seq2seq_dict = {
+        "type": "linear",
+        "out_features": 10,
+    }
     model = get_model(
         monkeypatch=monkeypatch,
-        model_type=model_type,
+        model_type="bert",
+        batch_size=inputs["input_ids"].shape[0],
+        seq_len=inputs["input_ids"].shape[1],
+        num_classes=int(torch.max(targets) + 1),
+        seq2seq_encoder=seq2seq_dict,
+        use_crf=False,
+    )
+    return model
+
+
+@pytest.mark.parametrize(
+    "model_type", list(HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE) + ["unknown"]
+)
+def test_config_model_classifier_dropout(monkeypatch, model_type):
+    if model_type in HF_MODEL_TYPE_TO_CLASSIFIER_DROPOUT_ATTRIBUTE:
+        model = get_model(
+            monkeypatch=monkeypatch,
+            model_type=model_type,
+            batch_size=4,
+            seq_len=10,
+            num_classes=5,
+        )
+        assert model is not None
+        assert isinstance(model, TokenClassificationModelWithSeq2SeqEncoderAndCrf)
+    else:
+        with pytest.raises(ValueError):
+            model = get_model(
+                monkeypatch=monkeypatch,
+                model_type=model_type,
+                batch_size=4,
+                seq_len=10,
+                num_classes=5,
+            )
+
+
+@pytest.mark.parametrize("seq2seq_enc_type", list(RNN_TYPE2CLASS))
+def test_seq2seq_classification_head(monkeypatch, seq2seq_enc_type):
+    seq2seq_dict = {
+        "type": seq2seq_enc_type,
+        "hidden_size": 10,
+    }
+    model = get_model(
+        monkeypatch,
+        model_type="bert",
         batch_size=4,
         seq_len=10,
         num_classes=5,
+        freeze_base_model=True,
+        seq2seq_encoder=seq2seq_dict,
     )
 
     assert model is not None
     assert isinstance(model, TokenClassificationModelWithSeq2SeqEncoderAndCrf)
+    assert isinstance(model.seq2seq_encoder.rnn, RNN_TYPE2CLASS[seq2seq_enc_type])
 
 
 def test_freeze_base_model(monkeypatch, batch):
@@ -224,60 +282,60 @@ def test_forward(batch, model):
     expected_logits = torch.tensor(
         [
             [
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [1.0, 0.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0, 0.0, 0.0],
-            ],
-            [
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [1.0, 0.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0, 0.0, 0.0],
-            ],
-            [
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 0.0],
             ],
             [
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
             ],
         ]
     )
@@ -285,29 +343,45 @@ def test_forward(batch, model):
     torch.testing.assert_close(logits, expected_logits)
 
 
-def test_step(batch, model):
+def test_step(batch, model, model_with_ce):
     torch.manual_seed(42)
     loss = model.step("train", batch)
     assert loss is not None
-    torch.testing.assert_close(loss, torch.tensor(57.9808))
+    torch.testing.assert_close(loss, torch.tensor(56.7139))
+
+    loss = model_with_ce.step("train", batch)
+    assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(1.5698))
 
 
-def test_training_step(batch, model):
+def test_training_step(batch, model, model_with_ce):
     loss = model.training_step(batch, batch_idx=0)
     assert loss is not None
-    torch.testing.assert_close(loss, torch.tensor(59.2053))
+    torch.testing.assert_close(loss, torch.tensor(56.7858))
+
+    loss = model_with_ce.training_step(batch, batch_idx=0)
+    assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(1.6032))
 
 
-def test_validation_step(batch, model):
+def test_validation_step(batch, model, model_with_ce):
     loss = model.validation_step(batch, batch_idx=0)
     assert loss is not None
-    torch.testing.assert_close(loss, torch.tensor(59.2053))
+    torch.testing.assert_close(loss, torch.tensor(56.7858))
+
+    loss = model_with_ce.validation_step(batch, batch_idx=0)
+    assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(1.6032))
 
 
-def test_test_step(batch, model):
+def test_test_step(batch, model, model_with_ce):
     loss = model.test_step(batch, batch_idx=0)
     assert loss is not None
-    torch.testing.assert_close(loss, torch.tensor(59.2053))
+    torch.testing.assert_close(loss, torch.tensor(56.7858))
+
+    loss = model_with_ce.test_step(batch, batch_idx=0)
+    assert loss is not None
+    torch.testing.assert_close(loss, torch.tensor(1.6032))
 
 
 def test_configure_optimizers(model):
