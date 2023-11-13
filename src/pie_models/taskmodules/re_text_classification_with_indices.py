@@ -241,7 +241,7 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
         super().__init__(**kwargs)
         if label_to_id is not None:
             logger.warning(
-                "label_to_id is deprecated and will be removed in a future version. "
+                "The parameter label_to_id is deprecated and will be removed in a future version. "
                 "Please use labels instead."
             )
             id_to_label = {v: k for k, v in label_to_id.items()}
