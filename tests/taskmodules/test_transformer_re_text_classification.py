@@ -40,6 +40,7 @@ def test_taskmodule_with_deprecated_parameters(caplog):
         taskmodule = RETextClassificationWithIndicesTaskModule(
             tokenizer_name_or_path=tokenizer_name_or_path, label_to_id={"a": 0, "b": 1}
         )
+        assert taskmodule.labels == ["a", "b"]
     # check the warning message
     assert len(caplog.records) == 1
     assert (
