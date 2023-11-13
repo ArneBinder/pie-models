@@ -592,6 +592,11 @@ class RETextClassificationWithIndicesTaskModule(TaskModuleType, ChangesTokenizer
             entities_set = set(entities)
             arguments2relation: Dict[Tuple[Tuple[str, Annotation], ...], Annotation] = {}
             for rel in all_relations:
+                # skip relations with unknown labels
+                if rel.label not in self.label_to_id:
+                    self.collect_relation("skipped_unknown_label", rel)
+                    continue
+
                 arguments = get_relation_argument_spans_and_roles(rel)
                 arg_roles, arg_spans = zip(*arguments)
                 # filter out all relations that have arguments not in the current partition
