@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy
 import pytest
 import torch
-from pytorch_ie.annotations import BinaryRelation, Label, LabeledSpan, NaryRelation
+from pytorch_ie.annotations import BinaryRelation, LabeledSpan, NaryRelation
 from pytorch_ie.core import Annotation, AnnotationList, annotation_field
 from pytorch_ie.documents import TextBasedDocument, TextDocument
 
@@ -193,14 +193,9 @@ def test_prepared_taskmodule(taskmodule, documents):
 def test_config(taskmodule):
     config = taskmodule._config()
     assert config["taskmodule_type"] == "RETextClassificationWithIndicesTaskModule"
-    assert "label_to_id" in config
-    assert config["label_to_id"] == {
-        "org:founded_by": 1,
-        "per:employee_of": 2,
-        "per:founder": 3,
-        "no_relation": 0,
-    }
-
+    assert taskmodule.PREPARED_ATTRIBUTES == ["labels", "entity_labels"]
+    assert all(attribute in config for attribute in taskmodule.PREPARED_ATTRIBUTES)
+    assert config["labels"] == ["org:founded_by", "per:employee_of", "per:founder"]
     assert config["entity_labels"] == ["ORG", "PER"]
 
 
@@ -1302,8 +1297,8 @@ def test_encode_nary_relatio():
         relation_annotation="relations",
         tokenizer_name_or_path=tokenizer_name_or_path,
         argument_role_to_marker={"r1": "R1", "r2": "R2", "r3": "R3"},
-        # setting label_to_id and entity_labels makes the taskmodule prepared
-        label_to_id={"rel": 1},
+        # setting labels and entity_labels makes the taskmodule prepared
+        labels=["rel"],
         entity_labels=["a", "b", "c"],
     )
     taskmodule._post_prepare()
@@ -1343,8 +1338,8 @@ def test_encode_unknown_relation_type():
     taskmodule = RETextClassificationWithIndicesTaskModule(
         relation_annotation="relations",
         tokenizer_name_or_path=tokenizer_name_or_path,
-        # setting label_to_id and entity_labels makes the taskmodule prepared
-        label_to_id={"has_wrong_type": 1},
+        # setting labels and entity_labels makes the taskmodule prepared
+        labels=["has_wrong_type"],
         entity_labels=["a"],
     )
     taskmodule._post_prepare()
@@ -1376,8 +1371,8 @@ def test_encode_with_unaligned_span(caplog):
     taskmodule = RETextClassificationWithIndicesTaskModule(
         relation_annotation="relations",
         tokenizer_name_or_path=tokenizer_name_or_path,
-        # setting label_to_id and entity_labels makes the taskmodule prepared
-        label_to_id={"rel": 1},
+        # setting v and entity_labels makes the taskmodule prepared
+        labels=["rel"],
         entity_labels=["a"],
     )
     taskmodule._post_prepare()
