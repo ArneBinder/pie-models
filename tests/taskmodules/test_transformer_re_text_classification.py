@@ -1285,6 +1285,38 @@ def test_encode_input_with_max_argument_distance_with_wrong_relation_type(
     )
 
 
+def test_encode_input_with_unknown_label(caplog):
+    taskmodule = RETextClassificationWithIndicesTaskModule(
+        relation_annotation="relations",
+        tokenizer_name_or_path="bert-base-cased",
+        labels=["rel"],
+        entity_labels=["a", "b"],
+        collect_statistics=True,
+    )
+    taskmodule.post_prepare()
+
+    doc = TestDocument(text="hello world", id="doc_with_unknown_label")
+    doc.entities.append(LabeledSpan(start=0, end=5, label="a"))
+    doc.entities.append(LabeledSpan(start=6, end=11, label="b"))
+    doc.relations.append(
+        BinaryRelation(head=doc.entities[0], tail=doc.entities[1], label="unknown")
+    )
+
+    task_encodings = taskmodule.encode_input(doc)
+    assert len(task_encodings) == 0
+
+    with caplog.at_level(logging.INFO):
+        taskmodule.show_statistics()
+    assert len(caplog.messages) == 1
+    assert (
+        caplog.messages[0] == "statistics:\n"
+        "|                       |   unknown |\n"
+        "|:----------------------|----------:|\n"
+        "| available             |         1 |\n"
+        "| skipped_unknown_label |         1 |"
+    )
+
+
 def test_encode_with_empty_partition_layer(documents):
     tokenizer_name_or_path = "bert-base-cased"
     taskmodule = RETextClassificationWithIndicesTaskModule(
