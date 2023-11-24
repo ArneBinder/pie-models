@@ -28,6 +28,32 @@ ToD = TypeVar("ToD", bound=TokenBasedDocument)
 TeD = TypeVar("TeD", bound=TextBasedDocument)
 
 
+def find_token_offset_mapping(text: str, tokens: Iterable[str]) -> List[Tuple[int, int]]:
+    """Find the token offset mapping for a given text and tokens. If a token is not found in the
+    text, the token offset mapping will be (idx, idx) for this token. So, this works also if
+    special tokens are not part of the text.
+
+    Args:
+        text (str): The text.
+        tokens (Iterable[str]): The tokens.
+
+    Returns:
+        List[Tuple[int, int]]: The token offset mapping.
+    """
+
+    token_offset_mapping = []
+    start = 0
+    for token in tokens:
+        new_start = text.find(token, start)
+        if new_start == -1:
+            token_offset_mapping.append((start, start))
+            continue
+        end = new_start + len(token)
+        token_offset_mapping.append((new_start, end))
+        start = end
+    return token_offset_mapping
+
+
 def text_based_document_to_token_based(
     doc: TextBasedDocument,
     result_document_type: Union[Type[ToD], str],
@@ -81,10 +107,7 @@ def text_based_document_to_token_based(
     # construct the char_to_token function, if not provided, from the token_offset_mapping
     if char_to_token is None:
         if token_offset_mapping is None:
-            raise ValueError(
-                "either token_offset_mapping or char_to_token must be provided to convert a text "
-                "based document to token based, but both are None"
-            )
+            token_offset_mapping = find_token_offset_mapping(text=doc.text, tokens=tokens)
         char_to_token_dict: Dict[int, int] = {}
         for token_idx, (start, end) in enumerate(token_offset_mapping):
             for char_idx in range(start, end):
@@ -156,7 +179,7 @@ def token_based_document_to_text_based(
     )
 
     # if a token_separator is provided, we construct the text from the tokens
-    if join_tokens_with is not None:
+    if text is None and join_tokens_with is not None:
         start = 0
         token_offset_mapping = []
         tokens = doc.tokens
@@ -166,23 +189,27 @@ def token_based_document_to_text_based(
             # we add the separator after each token
             start = end + len(join_tokens_with)
         text = join_tokens_with.join(tokens)
-    else:
-        text = doc.metadata.get("text") if text is None else text
-        if text is None:
-            raise ValueError(
-                "if join_tokens_with is None, text must be provided, but got None as well"
-            )
-        token_offset_mapping_lists = (
-            doc.metadata.get("token_offset_mapping")
-            if token_offset_mapping is None
-            else token_offset_mapping
+
+    # otherwise we try to use the text from the metadata
+    if text is None:
+        text = doc.metadata.get("text")
+
+    if text is None:
+        raise ValueError(
+            "if join_tokens_with is None, text must be provided, but got None as well"
         )
-        if token_offset_mapping_lists is None:
-            raise ValueError(
-                "if join_tokens_with is None, token_offsets must be provided, but got None as well"
-            )
-        else:
-            token_offset_mapping = [tuple(offsets) for offsets in token_offset_mapping_lists]  # type: ignore
+
+    token_offset_mapping_lists = (
+        doc.metadata.get("token_offset_mapping")
+        if token_offset_mapping is None
+        else token_offset_mapping
+    )
+    if token_offset_mapping_lists is None:
+        token_offset_mapping = find_token_offset_mapping(text=text, tokens=doc.tokens)
+    else:
+        # we convert the token_offset_mapping to tuples because the token_offset_mapping
+        # in the metadata is a list of lists, but we need a list of tuples
+        token_offset_mapping = [tuple(offsets) for offsets in token_offset_mapping_lists]  # type: ignore
 
     result = document_type(text=text, id=doc.id, metadata=deepcopy(doc.metadata))
     if "tokens" in doc.metadata and doc.metadata["tokens"] != list(doc.tokens):
