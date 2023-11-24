@@ -18,8 +18,9 @@ from typing import (
 from pytorch_ie.annotations import Span
 from pytorch_ie.core import Annotation
 from pytorch_ie.documents import TextBasedDocument, TokenBasedDocument
-from pytorch_ie.utils.hydra import resolve_target
 from transformers import PreTrainedTokenizer
+
+from pie_models.utils import resolve_type
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +37,10 @@ def text_based_document_to_token_based(
     strict_span_conversion: bool = True,
     verbose: bool = True,
 ) -> ToD:
-    document_type: Type[ToD]
-    if isinstance(result_document_type, str):
-        document_type = resolve_target(result_document_type)  # type: ignore
-    else:
-        document_type = result_document_type
-    if not (isinstance(document_type, type) and issubclass(document_type, TokenBasedDocument)):
-        raise TypeError(
-            f"result_document_type must be a subclass of TokenBasedDocument or a string that resolves to that, "
-            f"but got {result_document_type}"
-        )
+    document_type = resolve_type(
+        type_or_str=result_document_type, expected_super_type=TokenBasedDocument
+    )
+
     if tokens is None:
         tokens = doc.metadata.get("tokens")
     if tokens is None:
@@ -156,16 +151,10 @@ def token_based_document_to_text_based(
     strict_span_conversion: bool = True,
     verbose: bool = True,
 ) -> TeD:
-    document_type: Type[TeD]
-    if isinstance(result_document_type, str):
-        document_type = resolve_target(result_document_type)  # type: ignore
-    else:
-        document_type = result_document_type
-    if not (isinstance(document_type, type) and issubclass(document_type, TextBasedDocument)):
-        raise TypeError(
-            f"result_document_type must be a subclass of TextBasedDocument or a string that resolves to that, "
-            f"but got {result_document_type}"
-        )
+    document_type = resolve_type(
+        type_or_str=result_document_type, expected_super_type=TextBasedDocument
+    )
+
     # if a token_separator is provided, we construct the text from the tokens
     if join_tokens_with is not None:
         start = 0
