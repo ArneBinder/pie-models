@@ -127,11 +127,6 @@ def tokenizer() -> PreTrainedTokenizer:
     return AutoTokenizer.from_pretrained("bert-base-cased")
 
 
-@pytest.fixture(scope="module")
-def document_dict(documents):
-    return {doc.id: doc for doc in documents}
-
-
 def test_find_token_offset_mapping(text_document, token_document):
     token_offset_mapping = find_token_offset_mapping(
         text=text_document.text, tokens=list(token_document.tokens)
@@ -388,10 +383,9 @@ def test_token_based_document_to_text_based_wrong_annotation_type():
     )
 
 
-def test_tokenize_document(document_dict, tokenizer):
-    doc = document_dict["train_doc2"].copy()
+def test_tokenize_document(text_document, tokenizer):
     tokenized_docs = tokenize_document(
-        doc,
+        text_document,
         tokenizer=tokenizer,
         result_document_type=TokenizedTestDocument,
     )
@@ -401,60 +395,58 @@ def test_tokenize_document(document_dict, tokenizer):
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert doc.id == "train_doc2"
-    assert tokenized_doc.metadata["text"] == doc.text == "Entity A works at B."
+    assert (
+        tokenized_doc.metadata["text"]
+        == text_document.text
+        == "First sentence. Entity M works at N. And it founded O."
+    )
     assert tokenized_doc.tokens == (
         "[CLS]",
+        "First",
+        "sentence",
+        ".",
         "En",
         "##ti",
         "##ty",
-        "A",
+        "M",
         "works",
         "at",
-        "B",
+        "N",
+        ".",
+        "And",
+        "it",
+        "founded",
+        "O",
         ".",
         "[SEP]",
     )
-    assert len(tokenized_doc.sentences) == len(doc.sentences) == 1
-    assert str(doc.sentences[0]) == "Entity A works at B."
-    assert (
-        str(tokenized_doc.sentences[0]) == "('En', '##ti', '##ty', 'A', 'works', 'at', 'B', '.')"
-    )
-    assert len(tokenized_doc.entities) == len(doc.entities) == 2
-    assert str(doc.entities[0]) == "Entity A"
-    assert str(tokenized_doc.entities[0]) == "('En', '##ti', '##ty', 'A')"
-    assert str(doc.entities[1]) == "B"
-    assert str(tokenized_doc.entities[1]) == "('B',)"
-    assert len(tokenized_doc.relations) == len(doc.relations) == 1
-    assert tokenized_doc.relations[0].label == doc.relations[0].label == "per:employee_of"
-    assert doc.relations[0].head == doc.entities[0]
-    assert tokenized_doc.relations[0].head == tokenized_doc.entities[0]
-    assert doc.relations[0].tail == doc.entities[1]
-    assert tokenized_doc.relations[0].tail == tokenized_doc.entities[1]
+    assert len(tokenized_doc.sentences) == len(text_document.sentences) == 3
+    sentences = [str(sentence) for sentence in tokenized_doc.sentences]
+    assert sentences == [
+        "('First', 'sentence', '.')",
+        "('En', '##ti', '##ty', 'M', 'works', 'at', 'N', '.')",
+        "('And', 'it', 'founded', 'O', '.')",
+    ]
+    assert len(tokenized_doc.entities) == len(text_document.entities) == 4
+    entities = [str(entity) for entity in tokenized_doc.entities]
+    assert entities == ["('En', '##ti', '##ty', 'M')", "('N',)", "('it',)", "('O',)"]
+    assert len(tokenized_doc.relations) == len(text_document.relations) == 2
+    relation_tuples = [
+        (str(rel.head), rel.label, str(rel.tail)) for rel in tokenized_doc.relations
+    ]
+    assert relation_tuples == [
+        ("('En', '##ti', '##ty', 'M')", "per:employee_of", "('N',)"),
+        ("('it',)", "per:founder", "('O',)"),
+    ]
 
 
-def test_tokenize_document_max_length(document_dict, tokenizer):
-    doc = document_dict["train_doc2"].copy()
-    assert doc.id == "train_doc2"
-    assert doc.text == "Entity A works at B."
-    assert len(doc.sentences) == 1
-    assert str(doc.sentences[0]) == "Entity A works at B."
-    assert len(doc.entities) == 2
-    assert str(doc.entities[0]) == "Entity A"
-    assert str(doc.entities[1]) == "B"
-    assert len(doc.relations) == 1
-    assert doc.relations[0].label == "per:employee_of"
-    assert doc.relations[0].head == doc.entities[0]
-    assert doc.relations[0].tail == doc.entities[1]
-
+def test_tokenize_document_max_length(text_document, tokenizer):
     tokenized_docs = tokenize_document(
-        doc,
+        text_document,
         tokenizer=tokenizer,
         result_document_type=TokenizedTestDocument,
         strict_span_conversion=False,
-        # This will cut out the second entity. Also, the sentence annotation will be removed,
-        # because the sentence is not complete anymore.
-        max_length=8,
+        max_length=10,
         return_overflowing_tokens=True,
     )
     assert len(tokenized_docs) == 2
@@ -463,12 +455,29 @@ def test_tokenize_document_max_length(document_dict, tokenizer):
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert tokenized_doc.id == doc.id == "train_doc2"
-    assert tokenized_doc.metadata["text"] == doc.text == "Entity A works at B."
-    assert tokenized_doc.tokens == ("[CLS]", "En", "##ti", "##ty", "A", "works", "at", "[SEP]")
-    assert len(tokenized_doc.sentences) == 0
+    assert (
+        tokenized_doc.metadata["text"]
+        == text_document.text
+        == "First sentence. Entity M works at N. And it founded O."
+    )
+    assert tokenized_doc.tokens == (
+        "[CLS]",
+        "First",
+        "sentence",
+        ".",
+        "En",
+        "##ti",
+        "##ty",
+        "M",
+        "works",
+        "[SEP]",
+    )
+    assert len(tokenized_doc.sentences) == 1
+    sentences = [str(sentence) for sentence in tokenized_doc.sentences]
+    assert sentences == ["('First', 'sentence', '.')"]
     assert len(tokenized_doc.entities) == 1
-    assert str(tokenized_doc.entities[0]) == "('En', '##ti', '##ty', 'A')"
+    entities = [str(entity) for entity in tokenized_doc.entities]
+    assert entities == ["('En', '##ti', '##ty', 'M')"]
     assert len(tokenized_doc.relations) == 0
 
     tokenized_doc = tokenized_docs[1]
@@ -476,38 +485,39 @@ def test_tokenize_document_max_length(document_dict, tokenizer):
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert tokenized_doc.id == doc.id == "train_doc2"
-    assert tokenized_doc.metadata["text"] == doc.text == "Entity A works at B."
-    assert tokenized_doc.tokens == ("[CLS]", "B", ".", "[SEP]")
-    assert len(tokenized_doc.sentences) == 0
-    assert len(tokenized_doc.entities) == 1
-    assert str(tokenized_doc.entities[0]) == "('B',)"
-    assert len(tokenized_doc.relations) == 0
+    assert (
+        tokenized_doc.metadata["text"]
+        == text_document.text
+        == "First sentence. Entity M works at N. And it founded O."
+    )
+    assert tokenized_doc.tokens == (
+        "[CLS]",
+        "at",
+        "N",
+        ".",
+        "And",
+        "it",
+        "founded",
+        "O",
+        ".",
+        "[SEP]",
+    )
+    assert len(tokenized_doc.sentences) == 1
+    sentences = [str(sentence) for sentence in tokenized_doc.sentences]
+    assert sentences == ["('And', 'it', 'founded', 'O', '.')"]
+    assert len(tokenized_doc.entities) == 3
+    entities = [str(entity) for entity in tokenized_doc.entities]
+    assert entities == ["('N',)", "('it',)", "('O',)"]
+    assert len(tokenized_doc.relations) == 1
+    relation_tuples = [
+        (str(rel.head), rel.label, str(rel.tail)) for rel in tokenized_doc.relations
+    ]
+    assert relation_tuples == [("('it',)", "per:founder", "('O',)")]
 
 
-def test_tokenize_document_partition(document_dict, tokenizer):
-    doc = document_dict["train_doc7"].copy()
-    assert doc.id == "train_doc7"
-    assert doc.text == "First sentence. Entity M works at N. And it founded O."
-    assert len(doc.sentences) == 3
-    assert str(doc.sentences[0]) == "First sentence."
-    assert str(doc.sentences[1]) == "Entity M works at N."
-    assert str(doc.sentences[2]) == "And it founded O"
-    assert len(doc.entities) == 4
-    assert str(doc.entities[0]) == "Entity M"
-    assert str(doc.entities[1]) == "N"
-    assert str(doc.entities[2]) == "it"
-    assert str(doc.entities[3]) == "O"
-    assert len(doc.relations) == 3
-    assert doc.relations[0].head == doc.entities[0]
-    assert doc.relations[0].tail == doc.entities[1]
-    assert doc.relations[1].head == doc.entities[2]
-    assert doc.relations[1].tail == doc.entities[3]
-    assert doc.relations[2].head == doc.entities[3]
-    assert doc.relations[2].tail == doc.entities[2]
-
+def test_tokenize_document_partition(text_document, tokenizer):
     tokenized_docs = tokenize_document(
-        doc,
+        text_document,
         tokenizer=tokenizer,
         result_document_type=TokenizedTestDocument,
         strict_span_conversion=False,
@@ -519,10 +529,9 @@ def test_tokenize_document_partition(document_dict, tokenizer):
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert tokenized_doc.id == doc.id == "train_doc7"
     assert (
         tokenized_doc.metadata["text"]
-        == doc.text
+        == text_document.text
         == "First sentence. Entity M works at N. And it founded O."
     )
     assert tokenized_doc.tokens == ("[CLS]", "First", "sentence", ".", "[SEP]")
@@ -535,10 +544,9 @@ def test_tokenize_document_partition(document_dict, tokenizer):
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert tokenized_doc.id == doc.id == "train_doc7"
     assert (
         tokenized_doc.metadata["text"]
-        == doc.text
+        == text_document.text
         == "First sentence. Entity M works at N. And it founded O."
     )
     assert tokenized_doc.tokens == (
@@ -554,34 +562,36 @@ def test_tokenize_document_partition(document_dict, tokenizer):
         "[SEP]",
     )
     assert len(tokenized_doc.sentences) == 1
+    sentences = [str(sentence) for sentence in tokenized_doc.sentences]
+    assert sentences == ["('En', '##ti', '##ty', 'M', 'works', 'at', 'N', '.')"]
     assert len(tokenized_doc.entities) == 2
-    assert str(tokenized_doc.entities[0]) == "('En', '##ti', '##ty', 'M')"
-    assert str(tokenized_doc.entities[1]) == "('N',)"
+    entities = [str(entity) for entity in tokenized_doc.entities]
+    assert entities == ["('En', '##ti', '##ty', 'M')", "('N',)"]
     assert len(tokenized_doc.relations) == 1
-    assert tokenized_doc.relations[0].label == "per:employee_of"
-    assert tokenized_doc.relations[0].head == tokenized_doc.entities[0]
-    assert tokenized_doc.relations[0].tail == tokenized_doc.entities[1]
+    relation_tuples = [
+        (str(rel.head), rel.label, str(rel.tail)) for rel in tokenized_doc.relations
+    ]
+    assert relation_tuples == [("('En', '##ti', '##ty', 'M')", "per:employee_of", "('N',)")]
 
     tokenized_doc = tokenized_docs[2]
 
     # check (de-)serialization
     tokenized_doc.copy()
 
-    assert tokenized_doc.id == doc.id == "train_doc7"
     assert (
         tokenized_doc.metadata["text"]
-        == doc.text
+        == text_document.text
         == "First sentence. Entity M works at N. And it founded O."
     )
-    assert tokenized_doc.tokens == ("[CLS]", "And", "it", "founded", "O", "[SEP]")
+    assert tokenized_doc.tokens == ("[CLS]", "And", "it", "founded", "O", ".", "[SEP]")
     assert len(tokenized_doc.sentences) == 1
+    sentences = [str(sentence) for sentence in tokenized_doc.sentences]
+    assert sentences == ["('And', 'it', 'founded', 'O', '.')"]
     assert len(tokenized_doc.entities) == 2
-    assert str(tokenized_doc.entities[0]) == "('it',)"
-    assert str(tokenized_doc.entities[1]) == "('O',)"
-    assert len(tokenized_doc.relations) == 2
-    assert tokenized_doc.relations[0].label == "per:founder"
-    assert tokenized_doc.relations[0].head == tokenized_doc.entities[0]
-    assert tokenized_doc.relations[0].tail == tokenized_doc.entities[1]
-    assert tokenized_doc.relations[1].label == "org:founded_by"
-    assert tokenized_doc.relations[1].head == tokenized_doc.entities[1]
-    assert tokenized_doc.relations[1].tail == tokenized_doc.entities[0]
+    entities = [str(entity) for entity in tokenized_doc.entities]
+    assert entities == ["('it',)", "('O',)"]
+    assert len(tokenized_doc.relations) == 1
+    relation_tuples = [
+        (str(rel.head), rel.label, str(rel.tail)) for rel in tokenized_doc.relations
+    ]
+    assert relation_tuples == [("('it',)", "per:founder", "('O',)")]
