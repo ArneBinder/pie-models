@@ -223,8 +223,6 @@ def token_based_document_to_text_based(
         token_offset_mapping = [tuple(offsets) for offsets in token_offset_mapping_lists]  # type: ignore
 
     result = document_type(text=text, id=doc.id, metadata=deepcopy(doc.metadata))
-    if "tokens" in doc.metadata and doc.metadata["tokens"] != list(doc.tokens):
-        logger.warning("tokens in metadata are different from new tokens, overwrite the metadata")
     result.metadata["tokens"] = list(doc.tokens)
     # convert offset tuples to lists because serialization and deserialization again
     # will produce lists in any way (json does not know tuples)
@@ -251,7 +249,7 @@ def token_based_document_to_text_based(
         override_annotations[token_targeting_layer_name] = {}
         for token_span in doc[token_targeting_layer_name]:
             if not isinstance(token_span, Span):
-                raise ValueError(
+                raise TypeError(
                     f"can not convert layers that target the tokens but contain non-span annotations, "
                     f"but found {type(token_span)} in layer {token_targeting_layer_name}"
                 )

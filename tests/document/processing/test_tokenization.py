@@ -310,7 +310,7 @@ def test_text_based_document_to_token_based_wrong_annotation_type():
     assert (
         str(excinfo.value)
         == "can not convert layers that target the text but contain non-span annotations, "
-           "but found <class 'pytorch_ie.annotations.Label'> in layer wrong_annotations"
+        "but found <class 'pytorch_ie.annotations.Label'> in layer wrong_annotations"
     )
 
 
@@ -321,6 +321,71 @@ def test_token_based_document_to_text_based(token_document, text_document):
         result_document_type=TestDocument,
     )
     _test_text_document(result)
+
+
+def test_token_based_document_to_text_based_join_tokens_with(text_document, token_document):
+    result = token_based_document_to_text_based(
+        token_document,
+        join_tokens_with=" ",
+        result_document_type=TestDocument,
+    )
+
+    sentences = [str(sentence) for sentence in result.sentences]
+    assert sentences == ["First sentence .", "Entity M works at N .", "And it founded O ."]
+
+    entities = [str(entity) for entity in result.entities]
+    assert entities == ["Entity M", "N", "it", "O"]
+
+    relation_tuples = [(str(rel.head), rel.label, str(rel.tail)) for rel in result.relations]
+    assert relation_tuples == [("Entity M", "per:employee_of", "N"), ("it", "per:founder", "O")]
+
+
+def test_token_based_document_to_text_based_missing_text(token_document):
+    with pytest.raises(ValueError) as excinfo:
+        token_based_document_to_text_based(
+            token_document,
+            result_document_type=TestDocument,
+        )
+    assert (
+        str(excinfo.value)
+        == "if join_tokens_with is None, text must be provided, but got None as well"
+    )
+
+
+def test_token_based_document_token_based_offset_mapping_from_metadata(
+    token_document, text_document
+):
+    doc = token_document.copy()
+    doc.metadata["token_offset_mapping"] = find_token_offset_mapping(
+        text=text_document.text, tokens=list(doc.tokens)
+    )
+    result = token_based_document_to_text_based(
+        doc,
+        text=text_document.text,
+        result_document_type=TestDocument,
+    )
+    _test_text_document(result)
+
+
+def test_token_based_document_to_text_based_wrong_annotation_type():
+    @dataclasses.dataclass
+    class WrongAnnotationType(TokenBasedDocument):
+        wrong_annotations: AnnotationList[Label] = annotation_field(target="tokens")
+
+    doc = WrongAnnotationType(tokens=("Hallo", "World"))
+    doc.wrong_annotations.append(Label(label="wrong"))
+
+    with pytest.raises(TypeError) as excinfo:
+        token_based_document_to_text_based(
+            doc,
+            text="Hello World",
+            result_document_type=TestDocument,
+        )
+    assert (
+        str(excinfo.value)
+        == "can not convert layers that target the tokens but contain non-span annotations, "
+        "but found <class 'pytorch_ie.annotations.Label'> in layer wrong_annotations"
+    )
 
 
 def test_tokenize_document(document_dict, tokenizer):
