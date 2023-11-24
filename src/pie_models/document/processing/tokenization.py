@@ -67,42 +67,51 @@ def text_based_document_to_token_based(
         type_or_str=result_document_type, expected_super_type=TokenBasedDocument
     )
 
+    metadata = deepcopy(doc.metadata)
+
     if tokens is None:
         tokens = doc.metadata.get("tokens")
-    if tokens is None:
-        raise ValueError(
-            "tokens must be provided to convert a text based document to token based, but got None"
-        )
-    result = document_type(tokens=tuple(tokens), id=doc.id, metadata=deepcopy(doc.metadata))
+    elif "tokens" in metadata and metadata["tokens"] != tokens:
+        logger.warning("tokens in metadata are different from new tokens, take the new tokens")
 
     # save text, token_offset_mapping and char_to_token (if available) in metadata
-    result.metadata["text"] = doc.text
+    metadata["text"] = doc.text
     token_offset_mapping_lists: Optional[List[List[int]]]
-    if token_offset_mapping is not None:
+    if token_offset_mapping is None:
+        token_offset_mapping_lists = metadata.get("token_offset_mapping")
+        if token_offset_mapping_lists is not None:
+            token_offset_mapping = [tuple(offsets) for offsets in token_offset_mapping_lists]  # type: ignore
+    else:
         # convert offset tuples to lists because serialization and deserialization again
         # will produce lists in any way (json does not know tuples)
         token_offset_mapping_lists = [list(offsets) for offsets in token_offset_mapping]
         if (
-            "token_offset_mapping" in doc.metadata
-            and doc.metadata["token_offset_mapping"] != token_offset_mapping_lists
+            "token_offset_mapping" in metadata
+            and metadata["token_offset_mapping"] != token_offset_mapping_lists
         ):
             logger.warning(
                 "token_offset_mapping in metadata is different from the new token_offset_mapping, "
                 "overwrite the metadata"
             )
-        result.metadata["token_offset_mapping"] = token_offset_mapping_lists
+        metadata["token_offset_mapping"] = token_offset_mapping_lists
+
+    if tokens is None:
+        if token_offset_mapping is not None:
+            tokens = [doc.text[start:end] for start, end in token_offset_mapping]
+        else:
+            raise ValueError(
+                "tokens or token_offset_mapping must be provided to convert a text based document to token based, "
+                "but got None for both"
+            )
+
+    if char_to_token is None:
+        char_to_token = metadata.get("char_to_token")
     else:
-        token_offset_mapping_lists = doc.metadata.get("token_offset_mapping")
-        if token_offset_mapping_lists is not None:
-            token_offset_mapping = [tuple(offsets) for offsets in token_offset_mapping_lists]  # type: ignore
-    if char_to_token is not None:
-        if "char_to_token" in doc.metadata and doc.metadata["char_to_token"] != char_to_token:
+        if "char_to_token" in metadata and metadata["char_to_token"] != char_to_token:
             logger.warning(
                 "char_to_token in metadata is different from the new char_to_token, overwrite the metadata"
             )
-        result.metadata["char_to_token"] = char_to_token
-    else:
-        char_to_token = doc.metadata.get("char_to_token")
+        metadata["char_to_token"] = char_to_token
 
     # construct the char_to_token function, if not provided, from the token_offset_mapping
     if char_to_token is None:
@@ -115,6 +124,8 @@ def text_based_document_to_token_based(
 
         def char_to_token(char_idx: int) -> Optional[int]:
             return char_to_token_dict.get(char_idx)
+
+    result = document_type(tokens=tuple(tokens), id=doc.id, metadata=metadata)
 
     text_targeting_layers = [
         annotation_field.name
@@ -129,7 +140,7 @@ def text_based_document_to_token_based(
         char_span: Span
         for char_span in doc[text_targeting_layer_name]:
             if not isinstance(char_span, Span):
-                raise ValueError(
+                raise TypeError(
                     f"can not convert layers that target the text but contain non-span annotations, "
                     f"but found {type(char_span)} in layer {text_targeting_layer_name}"
                 )

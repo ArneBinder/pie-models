@@ -1,9 +1,9 @@
 import dataclasses
 
 import pytest
-from pytorch_ie.annotations import BinaryRelation, LabeledSpan, Span
+from pytorch_ie.annotations import BinaryRelation, Label, LabeledSpan, Span
 from pytorch_ie.core import AnnotationList, annotation_field
-from pytorch_ie.documents import TokenBasedDocument
+from pytorch_ie.documents import TextBasedDocument, TokenBasedDocument
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from pie_models.document.processing import (
@@ -165,13 +165,83 @@ def test_text_based_document_to_token_based(text_document, token_document):
     _test_token_document(doc)
 
 
-def test_token_based_document_to_text_based(token_document, text_document):
-    doc = token_based_document_to_text_based(
-        token_document,
-        text=text_document.text,
-        result_document_type=TestDocument,
+def test_text_based_document_to_token_based_tokens_from_metadata(text_document, token_document):
+    doc = text_document.copy()
+    doc.metadata["tokens"] = list(token_document.tokens)
+    result = text_based_document_to_token_based(
+        doc,
+        result_document_type=TokenizedTestDocument,
     )
-    _test_text_document(doc)
+    _test_token_document(result)
+
+
+def test_text_based_document_to_token_based_missing_tokens_and_token_offset_mapping(
+    text_document, token_document
+):
+    with pytest.raises(ValueError) as excinfo:
+        text_based_document_to_token_based(
+            text_document,
+            result_document_type=TokenizedTestDocument,
+        )
+    assert (
+        str(excinfo.value)
+        == "tokens or token_offset_mapping must be provided to convert a text based document to "
+        "token based, but got None for both"
+    )
+
+
+def test_text_based_document_to_token_based_tokens_from_metadata_are_different(
+    text_document, token_document, caplog
+):
+    doc = text_document.copy()
+    doc.metadata["tokens"] = list(token_document.tokens) + ["[PAD]"]
+    with caplog.at_level("WARNING"):
+        result = text_based_document_to_token_based(
+            doc,
+            tokens=list(token_document.tokens),
+            result_document_type=TokenizedTestDocument,
+        )
+    assert len(caplog.records) == 1
+    assert (
+        caplog.records[0].message
+        == "tokens in metadata are different from new tokens, take the new tokens"
+    )
+    _test_token_document(result)
+
+
+def test_text_based_document_to_token_based_offset_mapping_from_metadata(
+    text_document, token_document
+):
+    doc = text_document.copy()
+    doc.metadata["token_offset_mapping"] = find_token_offset_mapping(
+        text=doc.text, tokens=list(token_document.tokens)
+    )
+    result = text_based_document_to_token_based(
+        doc,
+        result_document_type=TokenizedTestDocument,
+    )
+    _test_token_document(result)
+
+
+def test_text_based_document_to_token_based_token_offset_mapping_from_metadata_is_different(
+    text_document, token_document, caplog
+):
+    doc = text_document.copy()
+    doc.metadata["token_offset_mapping"] = []
+    with caplog.at_level("WARNING"):
+        result = text_based_document_to_token_based(
+            doc,
+            token_offset_mapping=find_token_offset_mapping(
+                text=doc.text, tokens=list(token_document.tokens)
+            ),
+            result_document_type=TokenizedTestDocument,
+        )
+    assert len(caplog.records) == 1
+    assert (
+        caplog.records[0].message
+        == "token_offset_mapping in metadata is different from the new token_offset_mapping, overwrite the metadata"
+    )
+    _test_token_document(result)
 
 
 def test_text_based_document_to_token_based_unaligned_span_strict(text_document, token_document):
@@ -221,6 +291,36 @@ def test_text_based_document_to_token_based_unaligned_span_not_strict(
     assert len(doc.entities) == 1
     # the unaligned span is not included in the tokenized document
     assert len(tokenized_doc.entities) == 0
+
+
+def test_text_based_document_to_token_based_wrong_annotation_type():
+    @dataclasses.dataclass
+    class WrongAnnotationType(TextBasedDocument):
+        wrong_annotations: AnnotationList[Label] = annotation_field(target="text")
+
+    doc = WrongAnnotationType(text="First sentence. Entity M works at N. And it founded O.")
+    doc.wrong_annotations.append(Label(label="wrong"))
+
+    with pytest.raises(TypeError) as excinfo:
+        text_based_document_to_token_based(
+            doc,
+            result_document_type=TokenizedTestDocument,
+            token_offset_mapping=[],
+        )
+    assert (
+        str(excinfo.value)
+        == "can not convert layers that target the text but contain non-span annotations, "
+           "but found <class 'pytorch_ie.annotations.Label'> in layer wrong_annotations"
+    )
+
+
+def test_token_based_document_to_text_based(token_document, text_document):
+    result = token_based_document_to_text_based(
+        token_document,
+        text=text_document.text,
+        result_document_type=TestDocument,
+    )
+    _test_text_document(result)
 
 
 def test_tokenize_document(document_dict, tokenizer):
