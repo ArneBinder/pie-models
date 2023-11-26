@@ -1,3 +1,4 @@
+from .regex_partitioner import RegexPartitioner
 from .relation_argument_sorter import RelationArgumentSorter
 from .text_span_trimmer import TextSpanTrimmer
 from .tokenization import (
